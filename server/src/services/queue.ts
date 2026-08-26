@@ -146,6 +146,8 @@ export async function processarFila(): Promise<void> {
         where: { id: campanhaId },
         data: { enviados: { increment: 1 } },
       });
+      // Confirma que instância está conectada (envio funcionou)
+      wapi.marcarConectado();
       notify(campanhaId, contatoId, "enviado");
     } catch (err: unknown) {
       const erro = err instanceof Error ? err.message : "Erro desconhecido";

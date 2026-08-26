@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RefreshCw, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff, Loader2, Check } from "lucide-react";
 import api from "../api";
 
 interface QrResponse {
@@ -21,7 +21,10 @@ export default function Conectar() {
     try {
       const { data } = await api.get("/wapi/status");
       setStatus(data.status);
-      if (data.status === "connected") setQr(null);
+      if (data.status === "connected") {
+        setQr(null);
+        setPolling(false);
+      }
     } catch {
       setStatus("disconnected");
     } finally {
@@ -33,7 +36,7 @@ export default function Conectar() {
     setPolling(true);
     setQr(null);
     try {
-      const { data } = await api.get<WaqrQRCodeResponse>("/wapi/qrcode");
+      const { data } = await api.get<QrResponse>("/wapi/qrcode");
       setQr(data.base64 || data.qrCode);
 
       // Polling até conectar
@@ -51,9 +54,23 @@ export default function Conectar() {
       }, 3000);
 
       // Timeout de 2 minutos
-      setTimeout(() => clearInterval(interval), 120000);
+      setTimeout(() => {
+        clearInterval(interval);
+        setPolling(false);
+      }, 120000);
     } catch {
       setPolling(false);
+    }
+  }
+
+  async function confirmarConexao() {
+    try {
+      await api.post("/wapi/confirm");
+      setStatus("connected");
+      setQr(null);
+      setPolling(false);
+    } catch {
+      // Ignora erro
     }
   }
 
@@ -94,6 +111,13 @@ export default function Conectar() {
               className="w-72 h-72 rounded-xl border border-gray-700 shadow-glow"
             />
             <p className="text-sm text-gray-400">Escaneie com o WhatsApp</p>
+            <button
+              onClick={confirmarConexao}
+              className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-xl font-medium transition-all flex items-center gap-2"
+            >
+              <Check className="w-4 h-4" />
+              Já escanei!
+            </button>
           </>
         ) : (
           <div className="w-72 h-72 rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center gap-3 text-gray-500">
@@ -121,9 +145,4 @@ export default function Conectar() {
       </div>
     </div>
   );
-}
-
-interface WaqrQRCodeResponse {
-  qrCode: string;
-  base64: string;
 }
