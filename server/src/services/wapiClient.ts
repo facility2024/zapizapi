@@ -3,7 +3,13 @@
  * Cliente para comunicação com a W-API (w-api.app)
  */
 
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import axios, { AxiosInstance } from "axios";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
 
 const WAPI_BASE_URL = process.env.WAPI_BASE_URL || "https://api.w-api.app";
 const WAPI_INSTANCE_ID = process.env.WAPI_INSTANCE_ID || "";
@@ -34,10 +40,45 @@ function getClient(): AxiosInstance {
         Authorization: `Bearer ${WAPI_TOKEN}`,
         "Content-Type": "application/json",
       },
-      timeout: 30000,
+      timeout: 60000,
     });
   }
   return api;
+}
+
+/**
+ * Converte caminho local ou URL para data URL base64
+ * Se já for http/https, retorna como está
+ * Se for caminho local (/uploads/...), lê o arquivo e converte para base64
+ */
+function toBase64DataUrl(filePath: string): string {
+  // Se já é uma URL externa, retorna como está
+  if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+    return filePath;
+  }
+
+  // Se é data URL, retorna como está
+  if (filePath.startsWith("data:")) {
+    return filePath;
+  }
+
+  // É caminho local — lê e converte para base64
+  const localPath = path.join(UPLOADS_DIR, path.basename(filePath));
+  if (!fs.existsSync(localPath)) {
+    throw new Error(`Arquivo não encontrado: ${filePath}`);
+  }
+
+  const fileBuffer = fs.readFileSync(localPath);
+  const ext = path.extname(localPath).toLowerCase();
+  const mimeMap: Record<string, string> = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".gif": "image/gif", ".webp": "image/webp",
+    ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg", ".opus": "audio/ogg",
+  };
+  const mime = mimeMap[ext] || "application/octet-stream";
+  const base64 = fileBuffer.toString("base64");
+  return `data:${mime};base64,${base64}`;
 }
 
 /**
@@ -121,14 +162,15 @@ export async function sendText(numero: string, texto: string): Promise<WapiRespo
 
 /**
  * Envia imagem com legenda
- * POST /v1/message/send-image?instanceId=X
+ * Converte URL local para base64 antes de enviar
  */
 export async function sendImage(numero: string, imageUrl: string, caption?: string): Promise<WapiResponse> {
   try {
     const client = getClient();
+    const imageData = toBase64DataUrl(imageUrl);
     const { data } = await client.post(`/v1/message/send-image?instanceId=${WAPI_INSTANCE_ID}`, {
       phone: numero,
-      image: imageUrl,
+      image: imageData,
       caption: caption || "",
     });
     return { success: true, data };
@@ -143,14 +185,15 @@ export async function sendImage(numero: string, imageUrl: string, caption?: stri
 
 /**
  * Envia áudio como nota de voz (ptt)
- * POST /v1/message/send-audio?instanceId=X
+ * Converte URL local para base64 antes de enviar
  */
 export async function sendAudio(numero: string, audioUrl: string): Promise<WapiResponse> {
   try {
     const client = getClient();
+    const audioData = toBase64DataUrl(audioUrl);
     const { data } = await client.post(`/v1/message/send-audio?instanceId=${WAPI_INSTANCE_ID}`, {
       phone: numero,
-      audio: audioUrl,
+      audio: audioData,
       ptt: true,
     });
     return { success: true, data };

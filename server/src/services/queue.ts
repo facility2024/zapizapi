@@ -73,11 +73,18 @@ export async function enfileirarCampanha(campanhaId: string): Promise<void> {
 }
 
 /**
- * Processa a fila
+ * Processa a fila de envio
  */
 export async function processarFila(): Promise<void> {
   if (processando || fila.length === 0) return;
   processando = true;
+
+  console.log(`[FILA] Iniciando processamento com ${fila.length} contatos na fila`);
+
+  // Delay inicial antes do primeiro envio (10-20s para "aquecer")
+  const delayInicial = randomDelay(10, 20);
+  console.log(`[FILA] Aguardando ${Math.round(delayInicial / 1000)}s antes do primeiro envio...`);
+  await new Promise((r) => setTimeout(r, delayInicial));
 
   while (fila.length > 0 && !cancelado) {
     if (pausado) {
@@ -103,33 +110,44 @@ export async function processarFila(): Promise<void> {
       }
 
       const numero = contato.numero;
+      const temNome = contato.nome && contato.nome.trim().length > 0;
+      console.log(`[FILA] Processando ${numero} (nome: ${temNome ? contato.nome : 'sem nome'})`);
 
-      // Simula digitação
+      // Simula digitação (tempo realista)
       const tempoDig = wapi.calcularTempoDigitação(campanha.textoMensagem);
       await wapi.setComposing(numero, tempoDig);
 
+      // Processa mensagem com variáveis do contato
+      const msg = processarMensagem(
+        campanha.textoMensagem,
+        contato as unknown as import("./messageParser.js").Contato,
+        campanha.variavelFallback || undefined
+      );
+      console.log(`[FILA] Mensagem processada para ${numero}: "${msg.substring(0, 50)}..."`);
+
       // Envia conforme o tipo
       if (campanha.tipoDisparo === "texto") {
-        const msg = processarMensagem(campanha.textoMensagem, contato as unknown as import("./messageParser.js").Contato, campanha.variavelFallback || undefined);
         const resultado = await wapi.sendText(numero, msg);
         if (!resultado.success) throw new Error(resultado.error);
-
         await registrarEnvio(campanhaId, contatoId, "texto", resultado);
+
       } else if (campanha.tipoDisparo === "imagem_texto" && campanha.imagemUrl) {
         // Envia imagem
         const resImg = await wapi.sendImage(numero, campanha.imagemUrl);
         if (!resImg.success) throw new Error(resImg.error);
         await registrarEnvio(campanhaId, contatoId, "imagem", resImg);
 
-        // Aguarda delay entre imagem e texto
-        await new Promise((r) => setTimeout(r, campanha.delayImagemTexto * 1000));
+        // Delay entre imagem e texto (configurável)
+        const delayImgTxt = campanha.delayImagemTexto * 1000;
+        console.log(`[FILA] Aguardando ${campanha.delayImagemTexto}s entre imagem e texto...`);
+        await new Promise((r) => setTimeout(r, delayImgTxt));
 
-        // Envia texto
-        const msg = processarMensagem(campanha.textoMensagem, contato as unknown as import("./messageParser.js").Contato, campanha.variavelFallback || undefined);
+        // Envia texto com variáveis
         await wapi.setComposing(numero, wapi.calcularTempoDigitação(msg));
         const resTxt = await wapi.sendText(numero, msg);
         if (!resTxt.success) throw new Error(resTxt.error);
         await registrarEnvio(campanhaId, contatoId, "texto", resTxt);
+
       } else if (campanha.tipoDisparo === "audio" && campanha.audioUrl) {
         const resAudio = await wapi.sendAudio(numero, campanha.audioUrl);
         if (!resAudio.success) throw new Error(resAudio.error);
@@ -145,11 +163,13 @@ export async function processarFila(): Promise<void> {
         where: { id: campanhaId },
         data: { enviados: { increment: 1 } },
       });
-      // Confirma que instância está conectada (envio funcionou)
       wapi.marcarConectado();
       notify(campanhaId, contatoId, "enviado");
+      console.log(`[FILA] ✅ Mensagem enviada para ${numero}`);
+
     } catch (err: unknown) {
       const erro = err instanceof Error ? err.message : "Erro desconhecido";
+      console.error(`[FILA] ❌ Erro ao enviar para ${contato.numero}: ${erro}`);
       await prisma.campanhaContato.update({
         where: { campanhaId_contatoId: { campanhaId, contatoId } },
         data: { status: "erro", errorMsg: erro },
@@ -161,9 +181,10 @@ export async function processarFila(): Promise<void> {
       notify(campanhaId, contatoId, "erro", erro);
     }
 
-    // Delay entre envios para contatos diferentes
-    if (fila.length > 0) {
+    // Delay aleatório entre envios (respeita configuração do usuário)
+    if (fila.length > 0 && !cancelado) {
       const delay = randomDelay(campanha.delayEntreMsgMin, campanha.delayEntreMsgMax);
+      console.log(`[FILA] Aguardando ${Math.round(delay / 1000)}s antes do próximo envio...`);
       await new Promise((r) => setTimeout(r, delay));
     }
   }
@@ -175,6 +196,7 @@ export async function processarFila(): Promise<void> {
       data: { status: "concluida" },
     });
     notify(campanhaAtualId, "", "concluida");
+    console.log(`[FILA] Campanha ${campanhaAtualId} concluída`);
   }
 
   processando = false;
