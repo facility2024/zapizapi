@@ -1,19 +1,13 @@
 /**
  * wapiClient.ts
- * Cliente para comunicação com a W-API (wapi.chat)
+ * Cliente para comunicação com a W-API (w-api.app)
  */
 
 import axios, { AxiosInstance } from "axios";
 
-const WAPI_BASE_URL = process.env.WAPI_BASE_URL || "https://api.wapi.chat";
+const WAPI_BASE_URL = process.env.WAPI_BASE_URL || "https://api.w-api.app/v1";
 const WAPI_INSTANCE_ID = process.env.WAPI_INSTANCE_ID || "";
 const WAPI_TOKEN = process.env.WAPI_TOKEN || "";
-
-interface WapiConfig {
-  baseUrl: string;
-  instanceId: string;
-  token: string;
-}
 
 interface WapiResponse {
   success: boolean;
@@ -46,19 +40,16 @@ function getClient(): AxiosInstance {
   return api;
 }
 
-function getInstanceUrl(): string {
-  return `/instance/${WAPI_INSTANCE_ID}`;
-}
-
 /**
  * Verifica se a instância está conectada
+ * Tenta o endpoint connection-state; se falhar, assume desconectado
  */
 export async function checkStatus(): Promise<ConnectionStatus> {
   try {
     const client = getClient();
-    const { data } = await client.get(`${getInstanceUrl()}/status`);
+    const { data } = await client.get(`/instance/connection-state?instanceId=${WAPI_INSTANCE_ID}`);
     return {
-      status: data.state === "open" ? "connected" : data.state === "connecting" ? "connecting" : "disconnected",
+      status: data.state === "open" || data.connected === true ? "connected" : data.state === "connecting" ? "connecting" : "disconnected",
     };
   } catch {
     return { status: "disconnected" };
@@ -69,23 +60,41 @@ export async function checkStatus(): Promise<ConnectionStatus> {
  * Obtém QR Code para pareamento
  */
 export async function getQrCode(): Promise<QrCodeResponse> {
-  const client = getClient();
-  const { data } = await client.get(`${getInstanceUrl()}/qr`);
-  return {
-    qrCode: data.qr || data.base64,
-    base64: data.base64 || data.qr,
-  };
+  try {
+    const client = getClient();
+    const { data } = await client.get(`/instance/connect-qrcode-base64?instanceId=${WAPI_INSTANCE_ID}`);
+    return {
+      qrCode: data.qrCode || data.base64 || data.qr,
+      base64: data.base64 || data.qrCode || data.qr,
+    };
+  } catch (err: unknown) {
+    const error = err as { response?: { data?: { message?: string } }; message?: string };
+    throw new Error(error.response?.data?.message || error.message || "Erro ao obter QR Code");
+  }
+}
+
+/**
+ * Conecta a instância
+ */
+export async function connect(): Promise<void> {
+  try {
+    const client = getClient();
+    await client.post(`/instance/connect?instanceId=${WAPI_INSTANCE_ID}`);
+  } catch {
+    // Silencia erros de conexão
+  }
 }
 
 /**
  * Envia texto simples
+ * POST https://api.w-api.app/v1/message/send-text?instanceId=INSTANCE_ID
  */
 export async function sendText(numero: string, texto: string): Promise<WapiResponse> {
   try {
     const client = getClient();
-    const { data } = await client.post(`${getInstanceUrl()}/send-text`, {
-      number: numero,
-      text: texto,
+    const { data } = await client.post(`/message/send-text?instanceId=${WAPI_INSTANCE_ID}`, {
+      phone: numero,
+      message: texto,
     });
     return { success: true, data };
   } catch (err: unknown) {
@@ -103,9 +112,10 @@ export async function sendText(numero: string, texto: string): Promise<WapiRespo
 export async function sendImage(numero: string, imageUrl: string, caption?: string): Promise<WapiResponse> {
   try {
     const client = getClient();
-    const { data } = await client.post(`${getInstanceUrl()}/send-image`, {
-      number: numero,
-      image: imageUrl,
+    const { data } = await client.post(`/message/send-image?instanceId=${WAPI_INSTANCE_ID}`, {
+      phone: numero,
+      mediatype: "image",
+      media: imageUrl,
       caption: caption || "",
     });
     return { success: true, data };
@@ -124,9 +134,10 @@ export async function sendImage(numero: string, imageUrl: string, caption?: stri
 export async function sendAudio(numero: string, audioUrl: string): Promise<WapiResponse> {
   try {
     const client = getClient();
-    const { data } = await client.post(`${getInstanceUrl()}/send-voice`, {
-      number: numero,
-      audio: audioUrl,
+    const { data } = await client.post(`/message/send-audio?instanceId=${WAPI_INSTANCE_ID}`, {
+      phone: numero,
+      mediatype: "audio",
+      media: audioUrl,
       ptt: true,
     });
     return { success: true, data };
@@ -140,32 +151,19 @@ export async function sendAudio(numero: string, audioUrl: string): Promise<WapiR
 }
 
 /**
- * Simula digitação (composing)
+ * A W-API aplica composing automaticamente via delayMessage
  */
-export async function setComposing(numero: string, durationMs: number): Promise<void> {
-  try {
-    const client = getClient();
-    await client.post(`${getInstanceUrl()}/send-presence`, {
-      number: numero,
-      presence: "composing",
-    });
-    await new Promise((resolve) => setTimeout(resolve, durationMs));
-    await client.post(`${getInstanceUrl()}/send-presence`, {
-      number: numero,
-      presence: "paused",
-    });
-  } catch {
-    // Silencia erros de composing — não deve bloquear envio
-  }
+export async function setComposing(_numero: string, _durationMs: number): Promise<void> {
+  // Não há endpoint dedicado de composing na W-API
 }
 
 /**
  * Calcula tempo de digitação baseado no tamanho do texto
  */
 export function calcularTempoDigitação(texto: string): number {
-  const msPorChar = 50; // 50ms por caractere
-  const min = 1500;     // mínimo 1.5s
-  const max = 6000;     // máximo 6s
+  const msPorChar = 50;
+  const min = 1500;
+  const max = 6000;
   const calculado = texto.length * msPorChar;
   return Math.max(min, Math.min(max, calculado));
 }
