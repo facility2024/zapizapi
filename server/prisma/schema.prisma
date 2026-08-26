@@ -15,7 +15,7 @@ model Contato {
   cidade    String?
   extras    String?  @default("{}") // JSON com colunas extras da planilha
   createdAt DateTime @default(now())
- .campanhas CampanhaContato[]
+  campanhas CampanhaContato[]
 }
 
 model Campanha {
