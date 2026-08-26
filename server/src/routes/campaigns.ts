@@ -111,7 +111,7 @@ router.post("/:id/start", async (req, res) => {
   }
 
   await queue.enfileirarCampanha(campanha.id);
-  queue.processarFila();
+  queue.processarFila().catch((e) => console.error("[FILA] Erro:", e));
 
   res.json({ message: "Campanha iniciada", status: "em_andamento" });
 });

@@ -40,7 +40,7 @@ function getClient(): AxiosInstance {
         Authorization: `Bearer ${WAPI_TOKEN}`,
         "Content-Type": "application/json",
       },
-      timeout: 60000,
+      timeout: 15000,
     });
   }
   return api;

@@ -17,7 +17,7 @@ npm run dev
 cd server && npm run dev
 
 # Só o client (porta 5173)
-cd server && npm run dev
+cd client && npm run dev
 
 # Gerar cliente Prisma
 cd server && npx prisma generate
@@ -31,7 +31,7 @@ cd server && npx prisma db push
 Copie `server/.env.example` para `server/.env` e preencha:
 - `WAPI_INSTANCE_ID` — ID da instância W-API
 - `WAPI_TOKEN` — Token de autenticação
-- `WAPI_BASE_URL` — URL base (padrão: https://api.wapi.chat)
+- `WAPI_BASE_URL` — URL base (padrão no `.env.example`: https://api.w-api.app)
 
 Nunca commite o `.env`.
 
