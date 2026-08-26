@@ -95,18 +95,28 @@ export function processarMensagem(texto: string, contato: Contato, fallback?: st
 
 /**
  * Valida sintaxe do spintax (chaves balanceadas)
- * Retorna { valido, erro? }
+ * Ignora {{variaveis}} que usam chaves duplas
  */
 export function validarSpintax(texto: string): { valido: boolean; erro?: string } {
   let profundidade = 0;
 
   for (let i = 0; i < texto.length; i++) {
     if (texto[i] === "{") {
+      // Ignora {{variavel}} — duas chaves seguidas = variável, não spintax
+      if (i + 1 < texto.length && texto[i + 1] === "{") {
+        i++; // pula a segunda chave
+        continue;
+      }
       profundidade++;
       if (profundidade > 1) {
         return { valido: false, erro: `Chave de spintax aninhada não permitida na posição ${i}` };
       }
     } else if (texto[i] === "}") {
+      // Ignora }} de fechamento de variável
+      if (i + 1 < texto.length && texto[i + 1] === "}") {
+        i++; // pula a segunda chave
+        continue;
+      }
       profundidade--;
       if (profundidade < 0) {
         return { valido: false, erro: `Chave de fechamento excessiva na posição ${i}` };
