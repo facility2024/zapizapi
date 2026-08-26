@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Contato {
+  id        String   @id @default(uuid())
+  numero    String
+  nome      String?
+  empresa   String?
+  cidade    String?
+  extras    String?  @default("{}") // JSON com colunas extras da planilha
+  createdAt DateTime @default(now())
+ .campanhas CampanhaContato[]
+}
+
+model Campanha {
+  id                 String            @id @default(uuid())
+  nome               String
+  tipoDisparo        String            // "texto", "imagem_texto", "audio"
+  textoMensagem      String
+  imagemUrl          String?
+  audioUrl           String?
+  variavelFallback   String?           // fallback para variáveis vazias (ex: "tudo bem?")
+  status             String            @default("rascunho") // rascunho, agendada, em_andamento, pausada, concluida, cancelada
+  agendarPara        DateTime?
+  totalContatos      Int               @default(0)
+  enviados           Int               @default(0)
+  erros              Int               @default(0)
+  delayEntreMsgMin   Int               @default(20) // segundos mínimo
+  delayEntreMsgMax   Int               @default(40) // segundos máximo
+  delayImagemTexto   Int               @default(4)  // segundos entre imagem e texto
+  limitePorHora      Int?              // limite de envios por hora
+  limitePorDia       Int?              // limite de envios por dia
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  contatos           CampanhaContato[]
+  envios             Envio[]
+}
+
+model CampanhaContato {
+  id         String   @id @default(uuid())
+  campanhaId String
+  contatoId  String
+  status     String   @default("pendente") // pendente, enviando, enviado, erro
+  errorMsg   String?
+  createdAt  DateTime @default(now())
+  enviadoEm  DateTime?
+  campanha   Campanha @relation(fields: [campanhaId], references: [id])
+  contato    Contato  @relation(fields: [contatoId], references: [id])
+
+  @@unique([campanhaId, contatoId])
+}
+
+model Envio {
+  id         String   @id @default(uuid())
+  campanhaId String
+  contatoId  String
+  tipo       String   // "texto", "imagem", "audio"
+  status     String   // "enviado", "erro", "pendente"
+  response   String?  // resposta da W-API
+  errorMsg   String?
+  enviadoEm  DateTime @default(now())
+  campanha   Campanha @relation(fields: [campanhaId], references: [id])
+}
+
+model ConfiguracaoDelay {
+  id              String @id @default(uuid())
+  chave           String @unique
+  valor           String
+  descricao       String?
+}
