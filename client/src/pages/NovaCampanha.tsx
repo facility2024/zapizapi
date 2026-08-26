@@ -348,12 +348,12 @@ export default function NovaCampanha() {
               <textarea
                 value={numerosManual}
                 onChange={(e) => setNumerosManual(e.target.value)}
-                placeholder={"5511999999999\n11988887777\n(21) 97777-6666\n55 31 96666-5555"}
+                placeholder={"5511999999999|João\n11988887777|Maria\n(21) 97777-6666|Pedro\n55 31 96666-5555"}
                 rows={8}
                 className="w-full bg-bg-primary border border-gray-700 rounded-lg px-4 py-3 text-sm focus:border-accent focus:outline-none resize-none font-mono"
               />
               <div className="absolute bottom-3 right-3 text-xs text-gray-600">
-                {numerosLinhas.length} números
+                {numerosLinhas.length} contatos
               </div>
             </div>
 
@@ -374,8 +374,30 @@ export default function NovaCampanha() {
               </div>
             )}
 
+            {/* Preview dos contatos */}
+            {uploadResult && uploadResult.contatos.length > 0 && (
+              <div className="overflow-x-auto max-h-32 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-800">
+                      <th className="text-left py-1 px-2 text-gray-500">Número</th>
+                      <th className="text-left py-1 px-2 text-gray-500">Nome</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uploadResult.contatos.slice(0, 5).map((c) => (
+                      <tr key={c.id} className="border-b border-gray-800/50">
+                        <td className="py-1 px-2 text-accent-light font-mono">{c.numero}</td>
+                        <td className="py-1 px-2">{c.nome || <span className="text-gray-600">-</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <p className="text-xs text-gray-500">
-              Formatos aceitos: 5511999999999, 11988887777, (21) 97777-6666 — um número por linha
+              Formato: <span className="font-mono text-gray-400">numero|nome</span> — um contato por linha. Nome é opcional para usar {"{{nome}}"}
             </p>
           </div>
         )}

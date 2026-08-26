@@ -88,26 +88,36 @@ router.post("/", uploadMemoria.single("file"), async (req, res) => {
 });
 
 // POST /api/upload/manual — entrada manual de números
+// Formato: numero|nome (um por linha). Nome é opcional.
+// Exemplo:
+//   5511999999999|João
+//   11988887777
+//   (21) 97777-6666|Maria
 router.post("/manual", async (req, res) => {
   try {
-    console.log("[UPLOAD MANUAL] body:", JSON.stringify(req.body));
     const { numeros } = req.body;
 
     if (!numeros || typeof numeros !== "string") {
-      console.log("[UPLOAD MANUAL] numeros inválido:", typeof numeros);
       res.status(400).json({ error: "Envie uma lista de números" });
       return;
     }
 
     const linhas = numeros.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 0);
-    const contatosParaSalvar: { numero: string }[] = [];
+    const contatosParaSalvar: { numero: string; nome?: string }[] = [];
     const erros: string[] = [];
     let validos = 0;
     let invalidos = 0;
 
     for (let i = 0; i < linhas.length; i++) {
       const raw = linhas[i];
-      let num = raw.replace(/\D/g, "");
+
+      // Separa número|nome
+      const partes = raw.split("|");
+      let numRaw = partes[0].trim();
+      const nome = (partes[1] || "").trim() || undefined;
+
+      // Remove tudo que não é dígito do número
+      let num = numRaw.replace(/\D/g, "");
 
       if (!num.startsWith("55")) {
         num = "55" + num;
@@ -115,11 +125,11 @@ router.post("/manual", async (req, res) => {
 
       if (num.length < 12 || num.length > 13) {
         invalidos++;
-        erros.push(`Linha ${i + 1}: número inválido "${raw}" (${num.length} dígitos)`);
+        erros.push(`Linha ${i + 1}: número inválido "${numRaw}" (${num.length} dígitos)`);
         continue;
       }
 
-      contatosParaSalvar.push({ numero: num });
+      contatosParaSalvar.push({ numero: num, nome });
       validos++;
     }
 
@@ -127,15 +137,15 @@ router.post("/manual", async (req, res) => {
     for (const c of contatosParaSalvar) {
       const contato = await prisma.contato.upsert({
         where: { numero: c.numero },
-        update: {},
-        create: { numero: c.numero },
+        update: { nome: c.nome || null },
+        create: { numero: c.numero, nome: c.nome },
       });
-      contatosSalvos.push({ id: contato.id, numero: contato.numero });
+      contatosSalvos.push({ id: contato.id, numero: contato.numero, nome: contato.nome });
     }
 
     res.json({
       contatos: contatosSalvos,
-      headers: ["numero"],
+      headers: ["numero", "nome"],
       validos,
       invalidos,
       erros: erros.slice(0, 20),
