@@ -66,7 +66,18 @@ function mapearColuna(header: string): string | null {
  * Parseia arquivo Excel/CSV e retorna contatos normalizados
  */
 export function parsePlanilha(buffer: Buffer, filename: string): ParseResult {
-  const workbook = XLSX.read(buffer, { type: "buffer" });
+  // Detecta se é CSV com separador ;
+  const ext = filename.toLowerCase().split(".").pop();
+  const isCSV = ext === "csv" || ext === "txt";
+  const parseOptions: Record<string, unknown> = {};
+  if (isCSV) {
+    const content = buffer.toString("utf-8");
+    if (content.includes(";") && !content.includes("\t")) {
+      parseOptions.FS = ";";
+    }
+  }
+
+  const workbook = XLSX.read(buffer, { type: "buffer", ...parseOptions });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
     return { contatos: [], headers: [], validos: 0, invalidos: 0, erros: ["Planilha vazia"] };

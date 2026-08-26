@@ -5,7 +5,7 @@
 
 import { Campanha, CampanhaContato, Contato } from "@prisma/client";
 import * as wapi from "./wapiClient.js";
-import { processarMensagem } from "./messageParser.js";
+import { processarMensagem, Contato as MessageContato } from "./messageParser.js";
 import { prisma } from "../db.js";
 
 interface FilaItem {
@@ -24,7 +24,7 @@ let campanhaAtualId: string | null = null;
 
 // Callback para atualizar frontend via WebSocket
 type StatusCallback = (campanhaId: string, contatoId: string, status: string, erro?: string) => void;
-let statusCallback: StatusCallback | null = void 0;
+let statusCallback: StatusCallback | null = null;
 
 export function onStatusUpdate(cb: StatusCallback) {
   statusCallback = cb;
@@ -120,7 +120,7 @@ export async function processarFila(): Promise<void> {
       // Processa mensagem com variáveis do contato
       const msg = processarMensagem(
         campanha.textoMensagem,
-        contato as unknown as import("./messageParser.js").Contato,
+        contato as unknown as MessageContato,
         campanha.variavelFallback || undefined
       );
       console.log(`[FILA] Mensagem processada para ${numero}: "${msg.substring(0, 50)}..."`);
@@ -132,21 +132,11 @@ export async function processarFila(): Promise<void> {
         await registrarEnvio(campanhaId, contatoId, "texto", resultado);
 
       } else if (campanha.tipoDisparo === "imagem_texto" && campanha.imagemUrl) {
-        // Envia imagem
-        const resImg = await wapi.sendImage(numero, campanha.imagemUrl);
+        // Envia imagem COM legenda (caption)
+        await wapi.setComposing(numero, wapi.calcularTempoDigitação(msg));
+        const resImg = await wapi.sendImage(numero, campanha.imagemUrl, msg);
         if (!resImg.success) throw new Error(resImg.error);
         await registrarEnvio(campanhaId, contatoId, "imagem", resImg);
-
-        // Delay entre imagem e texto (configurável)
-        const delayImgTxt = campanha.delayImagemTexto * 1000;
-        console.log(`[FILA] Aguardando ${campanha.delayImagemTexto}s entre imagem e texto...`);
-        await new Promise((r) => setTimeout(r, delayImgTxt));
-
-        // Envia texto com variáveis
-        await wapi.setComposing(numero, wapi.calcularTempoDigitação(msg));
-        const resTxt = await wapi.sendText(numero, msg);
-        if (!resTxt.success) throw new Error(resTxt.error);
-        await registrarEnvio(campanhaId, contatoId, "texto", resTxt);
 
       } else if (campanha.tipoDisparo === "audio" && campanha.audioUrl) {
         const resAudio = await wapi.sendAudio(numero, campanha.audioUrl);

@@ -5,7 +5,7 @@
 
 import { Router } from "express";
 import * as queue from "../services/queue.js";
-import { gerarExemplos, validarSpintax, detectarVariaveis } from "../services/messageParser.js";
+import { gerarExemplos, validarSpintax, detectarVariaveis, Contato } from "../services/messageParser.js";
 import { prisma } from "../db.js";
 
 const router = Router();
@@ -157,7 +157,7 @@ router.post("/:id/preview", async (req, res) => {
 
   const exemplos = gerarExemplos(
     campanha.textoMensagem,
-    contato as unknown as import("../services/messageParser.js").Contato,
+    contato as unknown as Contato,
     campanha.variavelFallback || undefined
   );
 

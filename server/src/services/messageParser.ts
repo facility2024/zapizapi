@@ -17,7 +17,7 @@ const ALIASES: Record<string, string> = {
   city: "cidade",
 };
 
-interface Contato {
+export interface Contato {
   numero: string;
   nome?: string;
   empresa?: string;
@@ -78,7 +78,8 @@ export function resolveVariaveis(texto: string, contato: Contato, fallback?: str
  * Parseia spintax {opcao1|opcao2|opcao3} e sorteia uma opção
  */
 export function parseSpintax(texto: string): string {
-  return texto.replace(/\{([^{}]+\|[^{}]+)\}/g, (_, grupo: string) => {
+  return texto.replace(/\{([^{}]+)\}/g, (_, grupo: string) => {
+    if (!grupo.includes("|")) return grupo;
     const opcoes = grupo.split("|").map((o: string) => o.trim());
     const idx = Math.floor(Math.random() * opcoes.length);
     return opcoes[idx];
