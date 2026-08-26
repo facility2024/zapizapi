@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Upload, Send, X, FileSpreadsheet, Loader2, Eye } from "lucide-react";
+import { Upload, Send, X, FileSpreadsheet, Loader2, Eye, Type } from "lucide-react";
 import api from "../api";
 
 interface Contato {
@@ -20,6 +20,7 @@ interface UploadResult {
 }
 
 type TipoDisparo = "texto" | "imagem_texto" | "audio";
+type ModoContato = "planilha" | "manual";
 
 export default function NovaCampanha() {
   const [nome, setNome] = useState("");
@@ -33,6 +34,8 @@ export default function NovaCampanha() {
   const [delayMax, setDelayMax] = useState(40);
   const [delayImgTxt, setDelayImgTxt] = useState(4);
 
+  const [modoContato, setModoContato] = useState<ModoContato>("planilha");
+  const [numerosManual, setNumerosManual] = useState("");
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploading, setUploading] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -42,7 +45,16 @@ export default function NovaCampanha() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textoRef = useRef<HTMLTextAreaElement>(null);
 
-  const variaveisDetectadas = uploadResult?.headers || [];
+  const variaveisDetectadas = modoContato === "planilha" ? (uploadResult?.headers || []) : [];
+
+  // Contagens da entrada manual
+  const numerosLinhas = numerosManual.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  const numerosValidos = numerosLinhas.filter((l) => {
+    const num = l.replace(/\D/g, "");
+    const final = num.startsWith("55") ? num : "55" + num;
+    return final.length >= 12 && final.length <= 13;
+  });
+  const numerosInvalidos = numerosLinhas.length - numerosValidos.length;
 
   // Upload de planilha
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -66,6 +78,24 @@ export default function NovaCampanha() {
     }
   }
 
+  // Processar números manuais
+  async function processarNumerosManuais(): Promise<Contato[]> {
+    if (!numerosManual.trim()) return [];
+    try {
+      const { data } = await api.post<UploadResult>("/upload/manual", { numeros: numerosManual });
+      if (data.erros?.length > 0 && data.validos === 0) {
+        setMensagemErro(data.erros[0]);
+        return [];
+      }
+      setUploadResult(data);
+      return data.contatos;
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setMensagemErro(error.response?.data?.error || "Erro ao processar números");
+      return [];
+    }
+  }
+
   // Inserir variável no texto
   function inserirVariavel(variavel: string) {
     const textarea = textoRef.current;
@@ -85,11 +115,11 @@ export default function NovaCampanha() {
 
   // Preview de spintax
   async function gerarPreview() {
-    if (!uploadResult?.contatos[0]) return;
+    const contatoExemplo = uploadResult?.contatos[0] || { id: "1", numero: "5511999999999", nome: "João" };
     try {
       const { data } = await api.post("/campaigns/fake/preview", {
         textoMensagem,
-        contato: uploadResult.contatos[0],
+        contato: contatoExemplo,
         fallback,
       });
       setPreview(data.exemplos || []);
@@ -102,31 +132,42 @@ export default function NovaCampanha() {
   useEffect(() => {
     const textarea = textoRef.current;
     if (!textarea) return;
-    // Adiciona classe de estilo quando muda o conteúdo
     textarea.style.backgroundImage = "none";
   }, [textoMensagem]);
 
   // Enviar campanha
   async function handleEnviar() {
-    if (!nome || !textoMensagem || !uploadResult?.contatos.length) {
-      setMensagemErro("Preencha nome, mensagem e faça upload de contatos");
+    if (!nome || !textoMensagem) {
+      setMensagemErro("Preencha nome e mensagem");
       return;
+    }
+
+    let contatosParaEnviar: Contato[] = [];
+
+    // Se modo manual, processa os números primeiro
+    if (modoContato === "manual") {
+      if (numerosLinhas.length === 0) {
+        setMensagemErro("Adicione pelo menos um número");
+        return;
+      }
+      contatosParaEnviar = await processarNumerosManuais();
+      if (contatosParaEnviar.length === 0) return;
+    } else {
+      if (!uploadResult?.contatos.length) {
+        setMensagemErro("Faça upload de uma planilha ou use a entrada manual");
+        return;
+      }
+      contatosParaEnviar = uploadResult.contatos;
     }
 
     setEnviando(true);
     setMensagemErro("");
 
     try {
-      const formData = new FormData();
-      if (imagemFile) formData.append("imagem", imagemFile);
-      if (audioFile) formData.append("audio", audioFile);
-
       let imagemUrl: string | undefined;
       let audioUrl: string | undefined;
 
-      // Upload de mídia se houver
       if (tipoDisparo === "imagem_texto" && imagemFile) {
-        // Por simplicidade, usa URL local (em produção, faria upload para storage)
         imagemUrl = URL.createObjectURL(imagemFile);
       }
       if (tipoDisparo === "audio" && audioFile) {
@@ -140,15 +181,15 @@ export default function NovaCampanha() {
         imagemUrl,
         audioUrl,
         variavelFallback: fallback || undefined,
-        contatoIds: uploadResult.contatos.map((c) => c.id),
+        contatoIds: contatosParaEnviar.map((c) => c.id),
         delayEntreMsgMin: delayMin,
         delayEntreMsgMax: delayMax,
         delayImagemTexto: delayImgTxt,
       });
 
-      // Limpa formulário
       setNome("");
       setTextoMensagem("");
+      setNumerosManual("");
       setUploadResult(null);
       setMensagemErro("");
     } catch (err: unknown) {
@@ -172,80 +213,150 @@ export default function NovaCampanha() {
         </div>
       )}
 
-      {/* Upload de contatos */}
+      {/* Lista de contatos */}
       <div className="bg-bg-card border border-gray-800 rounded-xl p-6">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">1. Lista de Contatos</h2>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.xls,.csv"
-          onChange={handleUpload}
-          className="hidden"
-        />
+        {/* Toggle Planilha / Manual */}
+        <div className="flex gap-3 mb-4">
+          <button
+            onClick={() => setModoContato("planilha")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
+              modoContato === "planilha"
+                ? "bg-accent/20 text-accent-light border border-accent/30"
+                : "bg-bg-primary border border-gray-700 text-gray-400 hover:border-gray-500"
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Planilha
+          </button>
+          <button
+            onClick={() => setModoContato("manual")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
+              modoContato === "manual"
+                ? "bg-accent/20 text-accent-light border border-accent/30"
+                : "bg-bg-primary border border-gray-700 text-gray-400 hover:border-gray-500"
+            }`}
+          >
+            <Type className="w-4 h-4" />
+            Manual
+          </button>
+        </div>
 
-        {uploadResult ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-bg-primary rounded-lg">
-              <div className="flex items-center gap-3">
-                <FileSpreadsheet className="w-5 h-5 text-green-400" />
-                <div>
-                  <p className="text-sm font-medium">{uploadResult.contatos.length} contatos importados</p>
-                  <p className="text-xs text-gray-500">
-                    <span className="text-green-400">{uploadResult.validos} válidos</span>
-                    {" · "}
-                    <span className="text-red-400">{uploadResult.invalidos} inválidos</span>
-                  </p>
+        {/* Modo Planilha */}
+        {modoContato === "planilha" && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleUpload}
+              className="hidden"
+            />
+
+            {uploadResult ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-bg-primary rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <FileSpreadsheet className="w-5 h-5 text-green-400" />
+                    <div>
+                      <p className="text-sm font-medium">{uploadResult.contatos.length} contatos importados</p>
+                      <p className="text-xs text-gray-500">
+                        <span className="text-green-400">{uploadResult.validos} válidos</span>
+                        {" · "}
+                        <span className="text-red-400">{uploadResult.invalidos} inválidos</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={() => setUploadResult(null)} className="text-gray-500 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Tabela preview */}
+                <div className="overflow-x-auto max-h-48 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-800">
+                        <th className="text-left py-2 px-3 text-gray-500">Número</th>
+                        <th className="text-left py-2 px-3 text-gray-500">Nome</th>
+                        {variaveisDetectadas.filter((h) => !["numero", "nome", "telefone", "whatsapp"].includes(h.toLowerCase())).map((h) => (
+                          <th key={h} className="text-left py-2 px-3 text-gray-500">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {uploadResult.contatos.slice(0, 10).map((c) => (
+                        <tr key={c.id} className="border-b border-gray-800/50">
+                          <td className="py-2 px-3 text-accent-light font-mono">{c.numero}</td>
+                          <td className="py-2 px-3">{c.nome || "-"}</td>
+                          {variaveisDetectadas.filter((h) => !["numero", "nome", "telefone", "whatsapp"].includes(h.toLowerCase())).map((h) => (
+                            <td key={h} className="py-2 px-3 text-gray-400">
+                              {c.extras ? JSON.parse(c.extras)[h.toLowerCase()] || "-" : "-"}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-              <button onClick={() => setUploadResult(null)} className="text-gray-500 hover:text-white">
-                <X className="w-4 h-4" />
+            ) : (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full border-2 border-dashed border-gray-700 rounded-xl p-8 flex flex-col items-center gap-3 hover:border-accent/50 transition-colors"
+              >
+                {uploading ? (
+                  <Loader2 className="w-8 h-8 text-accent animate-spin" />
+                ) : (
+                  <Upload className="w-8 h-8 text-gray-500" />
+                )}
+                <span className="text-sm text-gray-400">
+                  {uploading ? "Processando..." : "Clique ou arraste um arquivo .xlsx ou .csv"}
+                </span>
               </button>
+            )}
+          </>
+        )}
+
+        {/* Modo Manual */}
+        {modoContato === "manual" && (
+          <div className="space-y-3">
+            <div className="relative">
+              <textarea
+                value={numerosManual}
+                onChange={(e) => setNumerosManual(e.target.value)}
+                placeholder={"5511999999999\n11988887777\n(21) 97777-6666\n55 31 96666-5555"}
+                rows={8}
+                className="w-full bg-bg-primary border border-gray-700 rounded-lg px-4 py-3 text-sm focus:border-accent focus:outline-none resize-none font-mono"
+              />
+              <div className="absolute bottom-3 right-3 text-xs text-gray-600">
+                {numerosLinhas.length} números
+              </div>
             </div>
 
-            {/* Tabela preview */}
-            <div className="overflow-x-auto max-h-48 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-800">
-                    <th className="text-left py-2 px-3 text-gray-500">Número</th>
-                    <th className="text-left py-2 px-3 text-gray-500">Nome</th>
-                    {variaveisDetectadas.filter((h) => !["numero", "nome", "telefone", "whatsapp"].includes(h.toLowerCase())).map((h) => (
-                      <th key={h} className="text-left py-2 px-3 text-gray-500">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {uploadResult.contatos.slice(0, 10).map((c) => (
-                    <tr key={c.id} className="border-b border-gray-800/50">
-                      <td className="py-2 px-3 text-accent-light font-mono">{c.numero}</td>
-                      <td className="py-2 px-3">{c.nome || "-"}</td>
-                      {variaveisDetectadas.filter((h) => !["numero", "nome", "telefone", "whatsapp"].includes(h.toLowerCase())).map((h) => (
-                        <td key={h} className="py-2 px-3 text-gray-400">
-                          {c.extras ? JSON.parse(c.extras)[h.toLowerCase()] || "-" : "-"}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Contadores */}
+            <div className="flex items-center gap-4 text-xs">
+              <span className="text-green-400">{numerosValidos} válidos</span>
+              {numerosInvalidos > 0 && (
+                <span className="text-red-400">{numerosInvalidos} inválidos</span>
+              )}
             </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="w-full border-2 border-dashed border-gray-700 rounded-xl p-8 flex flex-col items-center gap-3 hover:border-accent/50 transition-colors"
-          >
-            {uploading ? (
-              <Loader2 className="w-8 h-8 text-accent animate-spin" />
-            ) : (
-              <Upload className="w-8 h-8 text-gray-500" />
+
+            {/* Erros de validação */}
+            {uploadResult && uploadResult.erros.length > 0 && (
+              <div className="space-y-1">
+                {uploadResult.erros.slice(0, 5).map((erro, i) => (
+                  <p key={i} className="text-xs text-red-400">{erro}</p>
+                ))}
+              </div>
             )}
-            <span className="text-sm text-gray-400">
-              {uploading ? "Processando..." : "Clique ou arraste um arquivo .xlsx ou .csv"}
-            </span>
-          </button>
+
+            <p className="text-xs text-gray-500">
+              Formatos aceitos: 5511999999999, 11988887777, (21) 97777-6666 — um número por linha
+            </p>
+          </div>
         )}
       </div>
 
@@ -454,7 +565,7 @@ export default function NovaCampanha() {
       {/* Botão enviar */}
       <button
         onClick={handleEnviar}
-        disabled={enviando || !nome || !textoMensagem || !uploadResult?.contatos.length}
+        disabled={enviando || !nome || !textoMensagem || (modoContato === "planilha" ? !uploadResult?.contatos.length : numerosLinhas.length === 0)}
         className="w-full py-4 bg-accent hover:bg-accent-light disabled:opacity-40 rounded-xl font-semibold transition-all shadow-glow-sm hover:shadow-glow flex items-center justify-center gap-3"
       >
         {enviando ? (

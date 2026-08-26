@@ -9,7 +9,7 @@ datasource db {
 
 model Contato {
   id        String   @id @default(uuid())
-  numero    String
+  numero    String   @unique
   nome      String?
   empresa   String?
   cidade    String?

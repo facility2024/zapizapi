@@ -4,11 +4,10 @@
  */
 
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
 import * as queue from "../services/queue.js";
 import { gerarExemplos, validarSpintax, detectarVariaveis } from "../services/messageParser.js";
+import { prisma } from "../db.js";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // GET /api/campaigns — lista campanhas

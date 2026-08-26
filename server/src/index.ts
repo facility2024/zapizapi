@@ -8,7 +8,6 @@ import express from "express";
 import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { PrismaClient } from "@prisma/client";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -16,6 +15,7 @@ import wapiRoutes from "./routes/wapi.js";
 import uploadRoutes from "./routes/upload.js";
 import campaignRoutes from "./routes/campaigns.js";
 import { onStatusUpdate } from "./services/queue.js";
+import { prisma } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -24,7 +24,6 @@ const io = new Server(httpServer, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
-const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
@@ -69,4 +68,13 @@ httpServer.listen(PORT, () => {
 process.on("SIGINT", async () => {
   await prisma.$disconnect();
   process.exit(0);
+});
+
+// Trata erros não tratados para não crashar o servidor
+process.on("unhandledRejection", (err) => {
+  console.error("[UNHANDLED REJECTION]", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[UNCAUGHT EXCEPTION]", err);
 });

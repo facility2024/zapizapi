@@ -3,11 +3,10 @@
  * Motor de fila de envio com delay configurável e persistência via Prisma
  */
 
-import { PrismaClient, Campanha, CampanhaContato, Contato } from "@prisma/client";
+import { Campanha, CampanhaContato, Contato } from "@prisma/client";
 import * as wapi from "./wapiClient.js";
 import { processarMensagem } from "./messageParser.js";
-
-const prisma = new PrismaClient();
+import { prisma } from "../db.js";
 
 interface FilaItem {
   campanhaId: string;
