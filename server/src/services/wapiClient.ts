@@ -5,7 +5,7 @@
 
 import axios, { AxiosInstance } from "axios";
 
-const WAPI_BASE_URL = process.env.WAPI_BASE_URL || "https://api.w-api.app/v1";
+const WAPI_BASE_URL = process.env.WAPI_BASE_URL || "https://api.w-api.app";
 const WAPI_INSTANCE_ID = process.env.WAPI_INSTANCE_ID || "";
 const WAPI_TOKEN = process.env.WAPI_TOKEN || "";
 
@@ -42,57 +42,61 @@ function getClient(): AxiosInstance {
 
 /**
  * Verifica se a instância está conectada
- * Tenta o endpoint connection-state; se falhar, assume desconectado
+ * GET /v1/instance/status-instance?instanceId=X
  */
 export async function checkStatus(): Promise<ConnectionStatus> {
   try {
     const client = getClient();
-    const { data } = await client.get(`/instance/connection-state?instanceId=${WAPI_INSTANCE_ID}`);
-    return {
-      status: data.state === "open" || data.connected === true ? "connected" : data.state === "connecting" ? "connecting" : "disconnected",
-    };
-  } catch {
+    const { data } = await client.get(`/v1/instance/status-instance?instanceId=${WAPI_INSTANCE_ID}`);
+    // W-API retorna { instanceId, status, state, ... }
+    const isConnected = data.status === "connected" || data.state === "open" || data.status === "open";
+    return { status: isConnected ? "connected" : "disconnected" };
+  } catch (err: unknown) {
+    const error = err as { response?: { data?: unknown }; message?: string };
+    console.error("[WAPI] Erro ao verificar status:", error.response?.data || error.message);
     return { status: "disconnected" };
   }
 }
 
 /**
  * Obtém QR Code para pareamento
+ * GET /v1/instance/qr-code?instanceId=X
  */
 export async function getQrCode(): Promise<QrCodeResponse> {
+  const client = getClient();
   try {
-    const client = getClient();
-    const { data } = await client.get(`/instance/connect-qrcode-base64?instanceId=${WAPI_INSTANCE_ID}`);
+    const { data } = await client.get(`/v1/instance/qr-code?instanceId=${WAPI_INSTANCE_ID}`);
+    // W-API retorna { error, instanceId, qrcode: "data:image/png;base64,..." }
+    const qr = data.qrcode || data.qrCode || data.base64 || "";
+    if (!qr) throw new Error("W-API retornou QR Code vazio");
     return {
-      qrCode: data.qrCode || data.base64 || data.qr,
-      base64: data.base64 || data.qrCode || data.qr,
+      qrCode: qr,
+      base64: qr,
     };
   } catch (err: unknown) {
-    const error = err as { response?: { data?: { message?: string } }; message?: string };
-    throw new Error(error.response?.data?.message || error.message || "Erro ao obter QR Code");
+    const error = err as { response?: { data?: unknown }; message?: string };
+    console.error("[WAPI] Erro ao obter QR Code:", error.response?.data || error.message);
+    throw new Error(`Falha ao obter QR Code: ${error.response?.data ? JSON.stringify(error.response.data) : error.message}`);
   }
 }
 
 /**
- * Conecta a instância
+ * Reinicia a instância
+ * GET /v1/instance/restart?instanceId=X
  */
-export async function connect(): Promise<void> {
-  try {
-    const client = getClient();
-    await client.post(`/instance/connect?instanceId=${WAPI_INSTANCE_ID}`);
-  } catch {
-    // Silencia erros de conexão
-  }
+export async function restartInstance(): Promise<void> {
+  const client = getClient();
+  await client.get(`/v1/instance/restart?instanceId=${WAPI_INSTANCE_ID}`);
 }
 
 /**
  * Envia texto simples
- * POST https://api.w-api.app/v1/message/send-text?instanceId=INSTANCE_ID
+ * POST /v1/message/send-text?instanceId=X
  */
 export async function sendText(numero: string, texto: string): Promise<WapiResponse> {
   try {
     const client = getClient();
-    const { data } = await client.post(`/message/send-text?instanceId=${WAPI_INSTANCE_ID}`, {
+    const { data } = await client.post(`/v1/message/send-text?instanceId=${WAPI_INSTANCE_ID}`, {
       phone: numero,
       message: texto,
     });
@@ -108,14 +112,14 @@ export async function sendText(numero: string, texto: string): Promise<WapiRespo
 
 /**
  * Envia imagem com legenda
+ * POST /v1/message/send-image?instanceId=X
  */
 export async function sendImage(numero: string, imageUrl: string, caption?: string): Promise<WapiResponse> {
   try {
     const client = getClient();
-    const { data } = await client.post(`/message/send-image?instanceId=${WAPI_INSTANCE_ID}`, {
+    const { data } = await client.post(`/v1/message/send-image?instanceId=${WAPI_INSTANCE_ID}`, {
       phone: numero,
-      mediatype: "image",
-      media: imageUrl,
+      image: imageUrl,
       caption: caption || "",
     });
     return { success: true, data };
@@ -130,14 +134,14 @@ export async function sendImage(numero: string, imageUrl: string, caption?: stri
 
 /**
  * Envia áudio como nota de voz (ptt)
+ * POST /v1/message/send-audio?instanceId=X
  */
 export async function sendAudio(numero: string, audioUrl: string): Promise<WapiResponse> {
   try {
     const client = getClient();
-    const { data } = await client.post(`/message/send-audio?instanceId=${WAPI_INSTANCE_ID}`, {
+    const { data } = await client.post(`/v1/message/send-audio?instanceId=${WAPI_INSTANCE_ID}`, {
       phone: numero,
-      mediatype: "audio",
-      media: audioUrl,
+      audio: audioUrl,
       ptt: true,
     });
     return { success: true, data };
@@ -151,10 +155,20 @@ export async function sendAudio(numero: string, audioUrl: string): Promise<WapiR
 }
 
 /**
- * A W-API aplica composing automaticamente via delayMessage
+ * Envia presença (digitando/paused)
+ * POST /v1/chats/send-presence?instanceId=X
  */
-export async function setComposing(_numero: string, _durationMs: number): Promise<void> {
-  // Não há endpoint dedicado de composing na W-API
+export async function setComposing(numero: string, durationMs: number): Promise<void> {
+  try {
+    const client = getClient();
+    await client.post(`/v1/chats/send-presence?instanceId=${WAPI_INSTANCE_ID}`, {
+      phone: numero,
+      presence: "composing",
+      delay: Math.floor(durationMs / 1000),
+    });
+  } catch {
+    // Silencia erros de composing
+  }
 }
 
 /**
