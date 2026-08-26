@@ -40,52 +40,15 @@ function getClient(): AxiosInstance {
   return api;
 }
 
-// Estado da conexão no servidor — W-API status-instance é instável
-let estadoConexao = { conectado: false, ultimaVerificacaoOk: 0 };
-
-export function marcarConectado(): void {
-  estadoConexao.conectado = true;
-  estadoConexao.ultimaVerificacaoOk = Date.now();
-}
-
-export function marcarDesconectado(): void {
-  estadoConexao.conectado = false;
-}
-
 /**
  * Verifica se a instância está conectada
- * Combina: estado interno + status-instance + fetch-instance
+ * GET /v1/instance/status-instance?instanceId=X
  */
 export async function checkStatus(): Promise<ConnectionStatus> {
   try {
     const client = getClient();
-
-    // Tenta status-instance (rápido)
     const { data } = await client.get(`/v1/instance/status-instance?instanceId=${WAPI_INSTANCE_ID}`);
-    if (data.connected === true) {
-      marcarConectado();
-      return { status: "connected" };
-    }
-
-    // Tenta fetch-instance
-    try {
-      const { data: fetchData } = await client.get(`/v1/instance/fetch-instance?instanceId=${WAPI_INSTANCE_ID}`);
-      if (fetchData.connected === true || (fetchData.connectedPhone && fetchData.connectedPhone.length > 0)) {
-        marcarConectado();
-        return { status: "connected" };
-      }
-    } catch {
-      // Ignora
-    }
-
-    // Se W-API diz desconectado, mas marcamos como conectado nos últimos 5 minutos,
-    // confia no estado interno (W-API é instável)
-    const TEMPO_MAX_CACHE_MS = 5 * 60 * 1000;
-    if (estadoConexao.conectado && Date.now() - estadoConexao.ultimaVerificacaoOk < TEMPO_MAX_CACHE_MS) {
-      return { status: "connected" };
-    }
-
-    return { status: "disconnected" };
+    return { status: data.connected === true ? "connected" : "disconnected" };
   } catch (err: unknown) {
     const error = err as { response?: { data?: unknown }; message?: string };
     console.error("[WAPI] Erro ao verificar status:", error.response?.data || error.message);
@@ -94,19 +57,14 @@ export async function checkStatus(): Promise<ConnectionStatus> {
 }
 
 /**
- * Força verificação ignorando cache interno
+ * Marca instância como conectada (chamado após envio bem-sucedido)
  */
-export async function forceCheckStatus(): Promise<ConnectionStatus> {
-  estadoConexao.conectado = false;
-  return checkStatus();
+export function marcarConectado(): void {
+  // Não faz nada — confiamos apenas no status real da W-API
 }
 
-export function getCachedStatus(): ConnectionStatus {
-  const TEMPO_MAX_CACHE_MS = 5 * 60 * 1000;
-  if (estadoConexao.conectado && Date.now() - estadoConexao.ultimaVerificacaoOk < TEMPO_MAX_CACHE_MS) {
-    return { status: "connected" };
-  }
-  return { status: "disconnected" };
+export function marcarDesconectado(): void {
+  // Não faz nada — confiamos apenas no status real da W-API
 }
 
 /**

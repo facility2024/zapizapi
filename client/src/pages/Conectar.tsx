@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { RefreshCw, Wifi, WifiOff, Loader2, Check } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { RefreshCw, Wifi, WifiOff, Loader2 } from "lucide-react";
 import api from "../api";
 
 interface QrResponse {
@@ -12,9 +12,14 @@ export default function Conectar() {
   const [qr, setQr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     verificarStatus();
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, []);
 
   async function verificarStatus() {
@@ -24,6 +29,11 @@ export default function Conectar() {
       if (data.status === "connected") {
         setQr(null);
         setPolling(false);
+        setError(null);
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
       }
     } catch {
       setStatus("disconnected");
@@ -35,16 +45,19 @@ export default function Conectar() {
   async function buscarQrCode() {
     setPolling(true);
     setQr(null);
+    setError(null);
     try {
       const { data } = await api.get<QrResponse>("/wapi/qrcode");
       setQr(data.base64 || data.qrCode);
 
       // Polling até conectar
-      const interval = setInterval(async () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(async () => {
         try {
           const { data: st } = await api.get("/wapi/status");
           if (st.status === "connected") {
-            clearInterval(interval);
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            intervalRef.current = null;
             setPolling(false);
             verificarStatus();
           }
@@ -55,22 +68,16 @@ export default function Conectar() {
 
       // Timeout de 2 minutos
       setTimeout(() => {
-        clearInterval(interval);
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
         setPolling(false);
       }, 120000);
-    } catch {
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      setError(e.response?.data?.error || e.message || "Erro ao gerar QR Code");
       setPolling(false);
-    }
-  }
-
-  async function confirmarConexao() {
-    try {
-      await api.post("/wapi/confirm");
-      setStatus("connected");
-      setQr(null);
-      setPolling(false);
-    } catch {
-      // Ignora erro
     }
   }
 
@@ -101,6 +108,13 @@ export default function Conectar() {
         </span>
       </div>
 
+      {/* Erro */}
+      {error && (
+        <div className="bg-red-400/10 border border-red-400/30 text-red-400 p-4 rounded-xl text-sm">
+          {error}
+        </div>
+      )}
+
       {/* QR Code */}
       <div className="bg-bg-card border border-gray-800 rounded-xl p-8 flex flex-col items-center gap-6">
         {qr ? (
@@ -111,13 +125,6 @@ export default function Conectar() {
               className="w-72 h-72 rounded-xl border border-gray-700 shadow-glow"
             />
             <p className="text-sm text-gray-400">Escaneie com o WhatsApp</p>
-            <button
-              onClick={confirmarConexao}
-              className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-xl font-medium transition-all flex items-center gap-2"
-            >
-              <Check className="w-4 h-4" />
-              Já escanei!
-            </button>
           </>
         ) : (
           <div className="w-72 h-72 rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center gap-3 text-gray-500">
