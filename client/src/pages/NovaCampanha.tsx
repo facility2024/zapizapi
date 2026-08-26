@@ -135,6 +135,18 @@ export default function NovaCampanha() {
     textarea.style.backgroundImage = "none";
   }, [textoMensagem]);
 
+  // Upload de mídia para o servidor
+  async function uploadMedia(file: File): Promise<string | null> {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const { data } = await api.post<{ url: string }>("/upload/media", formData);
+      return data.url;
+    } catch {
+      return null;
+    }
+  }
+
   // Enviar campanha
   async function handleEnviar() {
     if (!nome || !textoMensagem) {
@@ -144,7 +156,6 @@ export default function NovaCampanha() {
 
     let contatosParaEnviar: Contato[] = [];
 
-    // Se modo manual, processa os números primeiro
     if (modoContato === "manual") {
       if (numerosLinhas.length === 0) {
         setMensagemErro("Adicione pelo menos um número");
@@ -167,14 +178,20 @@ export default function NovaCampanha() {
       let imagemUrl: string | undefined;
       let audioUrl: string | undefined;
 
+      // Upload de mídia para o servidor
       if (tipoDisparo === "imagem_texto" && imagemFile) {
-        imagemUrl = URL.createObjectURL(imagemFile);
+        const url = await uploadMedia(imagemFile);
+        if (url) imagemUrl = url;
+        else { setMensagemErro("Erro ao fazer upload da imagem"); setEnviando(false); return; }
       }
       if (tipoDisparo === "audio" && audioFile) {
-        audioUrl = URL.createObjectURL(audioFile);
+        const url = await uploadMedia(audioFile);
+        if (url) audioUrl = url;
+        else { setMensagemErro("Erro ao fazer upload do áudio"); setEnviando(false); return; }
       }
 
-      await api.post("/campaigns", {
+      // Cria a campanha
+      const { data: campanha } = await api.post<{ id: string }>("/campaigns", {
         nome,
         tipoDisparo,
         textoMensagem,
@@ -187,14 +204,18 @@ export default function NovaCampanha() {
         delayImagemTexto: delayImgTxt,
       });
 
+      // Auto-inicia a campanha
+      await api.post(`/campaigns/${campanha.id}/start`);
+
       setNome("");
       setTextoMensagem("");
       setNumerosManual("");
       setUploadResult(null);
       setMensagemErro("");
+      alert("Campanha criada e iniciada!");
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      setMensagemErro(error.response?.data?.error || "Erro ao criar campanha");
+      const error = err as { response?: { data?: { error?: string } }; message?: string };
+      setMensagemErro(error.response?.data?.error || error.message || "Erro ao criar campanha");
     } finally {
       setEnviando(false);
     }

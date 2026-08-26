@@ -1,18 +1,44 @@
 /**
  * upload.ts
- * Rota de upload de planilha e entrada manual de contatos
+ * Rota de upload de planilha, mídia e entrada manual de contatos
  */
 
 import { Router } from "express";
 import multer from "multer";
+import path from "path";
+import { fileURLToPath } from "url";
 import { parsePlanilha } from "../services/excelParser.js";
 import { prisma } from "../db.js";
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Storage para planilhas (memória)
+const uploadMemoria = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Storage para mídia (disco)
+const uploadMedia = multer({
+  storage: multer.diskStorage({
+    destination: path.join(__dirname, "..", "..", "uploads"),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 16 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = /\.(jpg|jpeg|png|gif|webp|mp3|wav|m4a|ogg|opus)$/i;
+    if (allowed.test(path.extname(file.originalname))) {
+      cb(null, true);
+    } else {
+      cb(new Error("Formato de arquivo não suportado"));
+    }
+  },
+});
+
 const router = Router();
 
 // POST /api/upload — upload de planilha
-router.post("/", upload.single("file"), async (req, res) => {
+router.post("/", uploadMemoria.single("file"), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: "Nenhum arquivo enviado" });
     return;
@@ -119,6 +145,24 @@ router.post("/manual", async (req, res) => {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     res.status(500).json({ error: msg });
   }
+});
+
+// POST /api/upload/media — upload de imagem ou áudio
+router.post("/media", (req, res) => {
+  uploadMedia.single("file")(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message || "Erro no upload" });
+      return;
+    }
+    if (!req.file) {
+      res.status(400).json({ error: "Nenhum arquivo enviado" });
+      return;
+    }
+
+    // Retorna URL relativa que o servidor consegue servir
+    const url = `/uploads/${req.file.filename}`;
+    res.json({ url, filename: req.file.filename });
+  });
 });
 
 export default router;
