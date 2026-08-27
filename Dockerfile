@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-alpine3.18
 
 # ffmpeg é necessário para conversão de áudio (fluent-ffmpeg)
 RUN apk add --no-cache ffmpeg
