@@ -42,6 +42,25 @@ function randomDelay(min: number, max: number): number {
 }
 
 /**
+ * Extrai a lista de URLs de imagens da campanha (até 4).
+ * Aceita o novo campo imagensUrls (JSON array) ou o legado imagemUrl (único).
+ */
+function obterImagens(imagensUrls?: string | null, imagemUrl?: string | null): string[] {
+  if (imagensUrls) {
+    try {
+      const arr = JSON.parse(imagensUrls);
+      if (Array.isArray(arr) && arr.length > 0) {
+        return arr.filter((u: unknown): u is string => typeof u === "string" && !!u).slice(0, 4);
+      }
+    } catch {
+      // ignora JSON inválido
+    }
+  }
+  if (imagemUrl) return [imagemUrl];
+  return [];
+}
+
+/**
  * Adiciona contatos à fila de uma campanha
  */
 export async function enfileirarCampanha(campanhaId: string): Promise<void> {
@@ -131,12 +150,17 @@ export async function processarFila(): Promise<void> {
         if (!resultado.success) throw new Error(resultado.error);
         await registrarEnvio(campanhaId, contatoId, "texto", resultado);
 
-      } else if (campanha.tipoDisparo === "imagem_texto" && campanha.imagemUrl) {
-        // Envia imagem COM legenda (caption)
-        await wapi.setComposing(numero, wapi.calcularTempoDigitação(msg));
-        const resImg = await wapi.sendImage(numero, campanha.imagemUrl, msg);
-        if (!resImg.success) throw new Error(resImg.error);
-        await registrarEnvio(campanhaId, contatoId, "imagem", resImg);
+      } else if (campanha.tipoDisparo === "imagem_texto") {
+        // Envia até 4 imagens (cada uma como mensagem separada, legenda só na 1ª)
+        const urls = obterImagens(campanha.imagensUrls, campanha.imagemUrl);
+        if (urls.length === 0) throw new Error("Nenhuma imagem configurada na campanha");
+        for (let i = 0; i < urls.length; i++) {
+          await wapi.setComposing(numero, wapi.calcularTempoDigitação(msg));
+          const resImg = await wapi.sendImage(numero, urls[i], i === 0 ? msg : "");
+          if (!resImg.success) throw new Error(resImg.error);
+          await registrarEnvio(campanhaId, contatoId, "imagem", resImg);
+          if (i < urls.length - 1) await new Promise((r) => setTimeout(r, 1500));
+        }
 
       } else if (campanha.tipoDisparo === "audio" && campanha.audioUrl) {
         const resAudio = await wapi.sendAudio(numero, campanha.audioUrl);

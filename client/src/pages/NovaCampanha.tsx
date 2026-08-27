@@ -56,9 +56,9 @@ export default function NovaCampanha() {
   const [nome, setNome] = useState("");
   const [tipoDisparo, setTipoDisparo] = useState<TipoDisparo>("texto");
   const [textoMensagem, setTextoMensagem] = useState("");
-  const [imagemFile, setImagemFile] = useState<File | null>(null);
+  const [imagensFiles, setImagensFiles] = useState<File[]>([]);
+  const [imagensPreviews, setImagensPreviews] = useState<string[]>([]);
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [imagemPreview, setImagemPreview] = useState<string | null>(null);
   const [fallback, setFallback] = useState("");
   const [delayMin, setDelayMin] = useState(20);
   const [delayMax, setDelayMax] = useState(40);
@@ -205,10 +205,23 @@ export default function NovaCampanha() {
       let audioUrl: string | undefined;
 
       // Upload de mídia para o servidor
-      if (tipoDisparo === "imagem_texto" && imagemFile) {
-        const url = await uploadMedia(imagemFile);
-        if (url) imagemUrl = url;
-        else { setMensagemErro("Erro ao fazer upload da imagem"); setEnviando(false); return; }
+      if (tipoDisparo === "imagem_texto") {
+        if (imagensFiles.length === 0) {
+          setMensagemErro("Adicione ao menos uma imagem");
+          setEnviando(false);
+          return;
+        }
+        const urls: string[] = [];
+        for (const f of imagensFiles) {
+          const u = await uploadMedia(f);
+          if (!u) {
+            setMensagemErro("Erro ao fazer upload de uma das imagens");
+            setEnviando(false);
+            return;
+          }
+          urls.push(u);
+        }
+        imagemUrl = JSON.stringify(urls);
       }
       if (tipoDisparo === "audio" && audioFile) {
         const url = await uploadMedia(audioFile);
@@ -221,7 +234,7 @@ export default function NovaCampanha() {
         nome,
         tipoDisparo,
         textoMensagem,
-        imagemUrl,
+        imagensUrls: imagemUrl,
         audioUrl,
         variavelFallback: fallback || undefined,
         contatoIds: contatosParaEnviar.map((c) => c.id),
@@ -237,6 +250,8 @@ export default function NovaCampanha() {
       setTextoMensagem("");
       setNumerosManual("");
       setUploadResult(null);
+      setImagensFiles([]);
+      setImagensPreviews([]);
       setMensagemErro("");
       alert("Campanha criada e iniciada!");
     } catch (err: unknown) {
@@ -489,37 +504,57 @@ export default function NovaCampanha() {
           ))}
         </div>
 
-        {/* Upload de imagem */}
+        {/* Upload de imagens (até 4) */}
         {tipoDisparo === "imagem_texto" && (
           <div className="mb-4">
-            <label className="block text-xs text-gray-500 mb-2">Imagem</label>
+            <label className="block text-xs text-gray-500 mb-2">
+              Imagens (até 4) {imagensFiles.length > 0 && `— ${imagensFiles.length}/4`}
+            </label>
             <input
               type="file"
               accept="image/*"
+              multiple
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setImagemFile(file);
-                  setImagemPreview(URL.createObjectURL(file));
-                }
+                const novos = Array.from(e.target.files || []).slice(0, 4);
+                setImagensFiles((prev) => {
+                  const combinados = [...prev, ...novos].slice(0, 4);
+                  setImagensPreviews(combinados.map((f) => URL.createObjectURL(f)));
+                  return combinados;
+                });
               }}
               className="hidden"
               id="img-upload"
             />
-            {imagemPreview ? (
-              <div className="relative inline-block">
-                <img src={imagemPreview} alt="Preview" className="w-32 h-32 object-cover rounded-lg border border-gray-700" />
-                <button
-                  onClick={() => { setImagemFile(null); setImagemPreview(null); }}
-                  className="absolute -top-2 -right-2 bg-red-500 rounded-full p-1"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+            {imagensPreviews.length > 0 ? (
+              <div className="flex flex-wrap gap-3">
+                {imagensPreviews.map((src, i) => (
+                  <div key={i} className="relative inline-block">
+                    <img src={src} alt={`Preview ${i + 1}`} className="w-24 h-24 object-cover rounded-lg border border-gray-700" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImagensFiles((prev) => {
+                          const f = prev.filter((_, idx) => idx !== i);
+                          setImagensPreviews(f.map((file) => URL.createObjectURL(file)));
+                          return f;
+                        });
+                      }}
+                      className="absolute -top-2 -right-2 bg-red-500 rounded-full p-1"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                {imagensFiles.length < 4 && (
+                  <label htmlFor="img-upload" className="w-24 h-24 flex items-center justify-center border-2 border-dashed border-gray-700 rounded-lg cursor-pointer hover:border-accent/50 text-gray-500">
+                    <Upload className="w-5 h-5" />
+                  </label>
+                )}
               </div>
             ) : (
               <label htmlFor="img-upload" className="block border-2 border-dashed border-gray-700 rounded-lg p-6 text-center cursor-pointer hover:border-accent/50">
                 <Upload className="w-6 h-6 text-gray-500 mx-auto mb-2" />
-                <span className="text-xs text-gray-500">Clique para selecionar imagem</span>
+                <span className="text-xs text-gray-500">Clique para selecionar até 4 imagens</span>
               </label>
             )}
           </div>

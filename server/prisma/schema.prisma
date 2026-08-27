@@ -24,6 +24,7 @@ model Campanha {
   tipoDisparo        String            // "texto", "imagem_texto", "audio"
   textoMensagem      String
   imagemUrl          String?
+  imagensUrls        String?  // JSON array (até 4 URLs) para disparo tipo imagem_texto
   audioUrl           String?
   variavelFallback   String?           // fallback para variáveis vazias (ex: "tudo bem?")
   status             String            @default("rascunho") // rascunho, agendada, em_andamento, pausada, concluida, cancelada
