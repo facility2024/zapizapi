@@ -73,8 +73,6 @@ export async function enfileirarCampanha(campanhaId: string): Promise<void> {
   });
 
   for (const item of contatosNaFila) {
-    const jaNaFila = fila.some((f) => f.campanhaId === campanhaId && f.contatoId === item.contatoId);
-    if (jaNaFila) continue;
     fila.push({
       campanhaId,
       contatoId: item.contatoId,

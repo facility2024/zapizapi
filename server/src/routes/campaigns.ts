@@ -82,15 +82,14 @@ router.post("/", async (req, res) => {
       delayImagemTexto: delayImagemTexto || 4,
       limitePorHora: limitePorHora || null,
       limitePorDia: limitePorDia || null,
-      totalContatos: (contatoIds ? [...new Set(contatoIds as string[])] : []).length,
+      totalContatos: contatoIds?.length || 0,
     },
   });
 
-  // Vincula contatos (remove duplicados pelo id)
-  const contatoIdsUnicos = contatoIds ? [...new Set(contatoIds as string[])] : [];
-  if (contatoIdsUnicos.length > 0) {
+  // Vincula contatos
+  if (contatoIds && contatoIds.length > 0) {
     await prisma.campanhaContato.createMany({
-      data: contatoIdsUnicos.map((contatoId: string) => ({
+      data: contatoIds.map((contatoId: string) => ({
         campanhaId: campanha.id,
         contatoId,
         status: "pendente",
