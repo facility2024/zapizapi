@@ -7,10 +7,10 @@ services:
       - WAPI_INSTANCE_ID=${WAPI_INSTANCE_ID}
       - WAPI_TOKEN=${WAPI_TOKEN}
       - WAPI_BASE_URL=${WAPI_BASE_URL:-https://api.wapi.chat}
-      - DATABASE_URL=file:./dev.db
+      - DATABASE_URL=file:/app/data/dev.db
       - PORT=3001
     volumes:
-      - db-data:/app/server
+      - db-data:/app/data
       - uploads:/app/server/uploads
     restart: unless-stopped
 

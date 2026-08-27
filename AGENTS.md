@@ -7,24 +7,28 @@ Zapizapi — app de disparo e agendamento de mensagens WhatsApp via W-API (wapi.
 ## Comandos
 
 ```bash
-# Instalar dependências (raiz + server + client)
-npm install && cd server && npm install && cd ../client && npm install
+# Instalar dependências (raiz + server + client — NÃO é workspace, instale em cada pasta)
+npm install && cd server && npm install && cd ../client && npm run install
 
-# Rodar tudo (server + client simultâneo)
+# Rodar tudo (server :3001 + client :5173 via concurrently)
 npm run dev
 
-# Só o server (porta 3001)
+# Só o server (tsx watch, porta 3001)
 cd server && npm run dev
 
-# Só o client (porta 5173)
+# Só o client (Vite, porta 5173)
 cd client && npm run dev
 
-# Gerar cliente Prisma
-cd server && npx prisma generate
+# Prisma: gerar cliente e criar o banco SQLite (rode ANTES de subir o server)
+cd server && npm run db:generate && npm run db:push
+# atalhos equivalentes aos comandos acima:
+cd server && npx prisma generate && npx prisma db push
 
-# Push do schema para SQLite
-cd server && npx prisma db push
+# Buildar só o frontend (server NÃO é compilado — roda via tsx)
+npm run build:client
 ```
+
+Não há `npm test`, lint nem format configurados — não procure esses comandos.
 
 ## Variáveis de Ambiente
 
@@ -32,43 +36,44 @@ Copie `server/.env.example` para `server/.env` e preencha:
 - `WAPI_INSTANCE_ID` — ID da instância W-API
 - `WAPI_TOKEN` — Token de autenticação
 - `WAPI_BASE_URL` — URL base (padrão no `.env.example`: https://api.w-api.app)
+- `DATABASE_URL="file:./dev.db"` — SQLite local
 
-Nunca commite o `.env`.
+Nunca commite o `.env` (está no `.gitignore`).
 
 ## Arquitetura
 
-- **Monorepo**: `server/` (Express + Prisma + SQLite local) e `client/` (React + Vite + Tailwind)
-- **Banco**: Prisma + SQLite local (`file:./dev.db`, criado via `npx prisma db push`). `server/supabase.sql` é espelho para quem quiser usar Supabase na nuvem (o projeto atual está bloqueado por `exceed_db_size_quota`).
-- **Fila**: em memória com persistência via Prisma (não usa Redis no MVP)
-- **WebSocket**: socket.io atualiza dashboard em tempo real
-- **Proxy**: Vite roteia `/api` e `/uploads` para `localhost:3001`
+- **Monorepo manual** (sem `workspaces`): `server/` (Express + Prisma + SQLite) e `client/` (React + Vite + Tailwind).
+- **Banco**: Prisma + SQLite local (`server/prisma/dev.db`, criado via `db:push`). `server/supabase.sql` é espelho para Supabase na nuvem.
+- **Fila**: em memória com persistência via Prisma (sem Redis no MVP).
+- **WebSocket**: socket.io emite `campaign-update` para o dashboard em tempo real (`queue.ts` registra o callback em `index.ts`).
+- **Proxy de dev**: Vite roteia `/api` e `/uploads` para `localhost:3001` (`client/vite.config.ts`).
+- **Deploy = 1 serviço**: o Express serve a API e também o `client/dist` (SPA fallback) na mesma porta. Não crie dois serviços nem proxy extra.
 
 ## Convenções
 
-- Código comentado em português
-- Services isolados e testáveis: `messageParser.ts`, `wapiClient.ts`, `queue.ts`, `excelParser.ts`, `audioConverter.ts`
-- Schema Prisma com SQLite local (`file:./dev.db`). `npx prisma generate` + `npx prisma db push` recriam o banco. Para nuvem, use `server/supabase.sql` (camelCase) num projeto Supabase com cota ok.
-- Spintax usa sintaxe `{op1|op2|op3}` — parseado DEPOIS de resolver variáveis `{{var}}`
-- Variáveis de saudação (`messageParser.ts`): `{{ola}}` é dinâmico (Bom dia/Boa tarde/Boa noite pelo horário do envio); `{{bom_dia}}`, `{{boa_tarde}}`, `{{boa_noite}}` são textos fixos. `{{numero}}`, `{{nome}}`, `{{empresa}}`, `{{cidade}}` e qualquer coluna extra da planilha também funcionam.
-- Delay entre envios é aleatório dentro de range configurável (não fixo)
-- Tema visual: fundo #0A0A0A, accent #8B00FF/#A100FF
+- Código e comentários em português.
+- Services isolados e testáveis em `server/src/services/`: `messageParser.ts`, `wapiClient.ts`, `queue.ts`, `excelParser.ts`, `audioConverter.ts`.
+- **Imports do server usam extensão `.js`** mesmo em arquivos `.ts` (module `NodeNext`/`ESM`). Ao editar imports, mantenha o `.js` — senão quebra em runtime.
+- **O server roda `.ts` direto via `tsx`** (scripts `dev`/`start`). Não rode `tsc` no server para produção; o Docker/build só compila o client.
+- Spintax: `{op1|op2|op3}` é resolvido DEPOIS das variáveis `{{var}}`.
+- Saudações (`messageParser.ts`): `{{ola}}` é dinâmico (Bom dia/tarde/noite pelo horário); `{{bom_dia}}`/`{{boa_tarde}}`/`{{boa_noite}}` são fixos. `{{numero}}`, `{{nome}}`, `{{empresa}}`, `{{cidade}}` e qualquer coluna extra da planilha funcionam.
+- Delay entre envios é aleatório dentro de um range configurável (não fixo).
+- Tema: fundo `#0A0A0A`, accent `#8B00FF`/`#A100FF`.
 
 ## Gotchas
 
-- `fluent-ffmpeg` requer `ffmpeg` instalado no sistema para converter áudio
-- W-API não oficial — payloads podem mudar; consultar docs antes de alterar `wapiClient.ts`
-- Planilha deve ter coluna de número (aliases: numero, telefone, whatsapp, phone)
-- Números são normalizados com DDI 55 automaticamente
+- `fluent-ffmpeg` exige `ffmpeg` no sistema (o `Dockerfile` já instala via `apk add ffmpeg`).
+- W-API não é oficial — payloads podem mudar; consulte a doc antes de alterar `wapiClient.ts`.
+- Planilha (`xlsx`) precisa de coluna de número (aliases: numero, telefone, whatsapp, phone).
+- Números são normalizados com DDI 55 automaticamente.
+- O script `db:seed` existe no `package.json` mas aponta para `prisma/seed.ts` que NÃO existe — não use.
 
-## Deploy (Easypanel / Docker)
+## Deploy (Docker / Easypanel)
 
-O app roda como **um único serviço**: o Express serve a API (`:3001`) e também o frontend buildado (`client/dist`). Não precisa de dois serviços nem proxy.
+Imagem única (raiz `Dockerfile`): builda o client e sobe o server servindo API + frontend.
 
-1. No Easypanel, crie um serviço **Node.js** apontando para este repo.
-2. **Build command**: `npx prisma generate && npx prisma db push && npm run build`
-3. **Start command**: `npm start` (sobe o server via `tsx`, que já serve o client)
-4. **Porta**: expõe a `PORT` (padrão 3001).
-5. **Variáveis de ambiente** (igual ao `.env.example`): `WAPI_INSTANCE_ID`, `WAPI_TOKEN`, `WAPI_BASE_URL`, `DATABASE_URL="file:./dev.db"`, `PORT`.
-6. **Banco persistente**: o SQLite grava em `server/prisma/dev.db`. Monte um **volume persistente** nesse caminho (ou em `server/prisma`) para não perder os dados ao reiniciar o container. Para usar Postgres/Supabase na nuvem, troque `DATABASE_URL` e adapte o `db.ts`/`schema.prisma` (espelho em `server/supabase.sql`).
-
-Alternativamente, use o **`Dockerfile`** na raiz (imagem única que builda o client e sobe o server servindo API + frontend). No Easypanel, basta apontar o serviço para o repo com o Dockerfile; o `CMD` já roda `prisma db push` + `npm start`.
+- **Build**: `npx prisma generate && npx prisma db push && npm run build`
+- **Start**: `npm start` (sobe o server via `tsx`)
+- **Porta**: `PORT` (padrão 3001)
+- **Env**: `WAPI_INSTANCE_ID`, `WAPI_TOKEN`, `WAPI_BASE_URL`, `DATABASE_URL="file:./dev.db"`, `PORT`
+- **Persistência**: o SQLite grava em `/app/data/dev.db` e há uploads em `server/uploads` — monte volumes em `/app/data` e `/app/server/uploads` (NUNCA monte o `/app/server` inteiro, senão o volume vazio sobrescreve o código do server). Defina `DATABASE_URL=file:/app/data/dev.db` na deploy. Para Postgres/Supabase, troque `DATABASE_URL` e adapte `db.ts`/`schema.prisma` (espelho em `server/supabase.sql`).
