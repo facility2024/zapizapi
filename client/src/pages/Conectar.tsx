@@ -135,7 +135,7 @@ export default function Conectar() {
 
         <button
           onClick={buscarQrCode}
-          disabled={polling}
+          disabled={polling || status === "connected"}
           className="px-6 py-3 bg-accent hover:bg-accent-light disabled:opacity-50 rounded-xl font-medium transition-all shadow-glow-sm hover:shadow-glow"
         >
           {polling ? (
@@ -145,6 +145,8 @@ export default function Conectar() {
             </span>
           ) : qr ? (
             "Gerar novo QR Code"
+          ) : status === "connected" ? (
+            "WhatsApp já conectado"
           ) : (
             "Conectar"
           )}

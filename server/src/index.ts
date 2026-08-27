@@ -39,6 +39,15 @@ app.use("/api/wapi", wapiRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/campaigns", campaignRoutes);
 
+// Frontend (produção): serve o build do client e SPA fallback
+const clientDist = path.join(__dirname, "..", "..", "client", "dist");
+app.use(express.static(clientDist));
+app.get(/^(?!\/(api|uploads|socket\.io)).*/, (_req, res) => {
+  res.sendFile(path.join(clientDist, "index.html"), (err) => {
+    if (err) res.status(404).send("Client não buildado. Rode 'npm run build:client'.");
+  });
+});
+
 // WebSocket — atualização em tempo real
 io.on("connection", (socket) => {
   console.log("Cliente conectado via WebSocket:", socket.id);

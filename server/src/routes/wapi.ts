@@ -21,6 +21,11 @@ router.get("/qrcode", async (_req, res) => {
     res.json(qr);
   } catch (err: unknown) {
     const error = err as Error;
+    // Instância já conectada — não há QR para exibir
+    if (error.message.includes("já está conectado")) {
+      res.status(200).json({ connected: true, message: error.message });
+      return;
+    }
     res.status(500).json({ error: error.message });
   }
 });

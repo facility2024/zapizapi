@@ -3,6 +3,21 @@
  * Resolve variáveis {{var}} e parseia spintax {op1|op2|op3}
  */
 
+// Saudações fixas — inseridas literalmente na mensagem
+const SaudacoesFixas: Record<string, string> = {
+  bom_dia: "Bom dia",
+  boa_tarde: "Boa tarde",
+  boa_noite: "Boa noite",
+};
+
+// Retorna saudação conforme o horário atual (usada por {{ola}})
+function saudacaoPorHorario(): string {
+  const hora = new Date().getHours();
+  if (hora >= 6 && hora < 12) return "Bom dia";
+  if (hora >= 12 && hora < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
 // Mapeamento de nomes de coluna amigáveis → chaves do contato
 const ALIASES: Record<string, string> = {
   nome: "nome",
@@ -58,6 +73,12 @@ export function resolveVariaveis(texto: string, contato: Contato, fallback?: str
 
   return texto.replace(/\{\{(\w+)\}\}/g, (_, chave) => {
     const chaveLower = chave.toLowerCase();
+
+    // Saudação dinâmica ({{ola}}) — escolhe pela hora do envio
+    if (chaveLower === "ola") return saudacaoPorHorario();
+
+    // Saudações fixas ({{bom_dia}}, {{boa_tarde}}, {{boa_noite}})
+    if (SaudacoesFixas[chaveLower]) return SaudacoesFixas[chaveLower];
 
     // Busca nos campos principais
     if (chaveLower === "numero") return contato.numero || "";

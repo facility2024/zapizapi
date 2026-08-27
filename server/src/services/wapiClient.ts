@@ -118,7 +118,13 @@ export async function getQrCode(): Promise<QrCodeResponse> {
     const { data } = await client.get(`/v1/instance/qr-code?instanceId=${WAPI_INSTANCE_ID}`);
     // W-API retorna { error, instanceId, qrcode: "data:image/png;base64,..." }
     const qr = data.qrcode || data.qrCode || data.base64 || "";
-    if (!qr) throw new Error("W-API retornou QR Code vazio");
+    if (!qr) {
+      // W-API retorna { connected: true } quando a instância já está pareada
+      if (data.connected === true) {
+        throw new Error("WhatsApp já está conectado. Não é necessário gerar QR Code.");
+      }
+      throw new Error("W-API retornou QR Code vazio");
+    }
     return {
       qrCode: qr,
       base64: qr,
