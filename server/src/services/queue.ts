@@ -156,7 +156,7 @@ export async function processarFila(): Promise<void> {
         if (urls.length === 0) throw new Error("Nenhuma imagem configurada na campanha");
         for (let i = 0; i < urls.length; i++) {
           await wapi.setComposing(numero, wapi.calcularTempoDigitação(msg));
-          const resImg = await wapi.sendImage(numero, urls[i], i === 0 ? msg : "");
+          const resImg = await wapi.sendImage(numero, urls[i], msg);
           if (!resImg.success) throw new Error(resImg.error);
           await registrarEnvio(campanhaId, contatoId, "imagem", resImg);
           if (i < urls.length - 1) await new Promise((r) => setTimeout(r, 1500));
