@@ -151,15 +151,24 @@ export async function processarFila(): Promise<void> {
         await registrarEnvio(campanhaId, contatoId, "texto", resultado);
 
       } else if (campanha.tipoDisparo === "imagem_texto") {
-        // Envia até 4 imagens (cada uma como mensagem separada, legenda só na 1ª)
+        // Envia as imagens primeiro (sem legenda), uma a uma
         const urls = obterImagens(campanha.imagensUrls, campanha.imagemUrl);
         if (urls.length === 0) throw new Error("Nenhuma imagem configurada na campanha");
         for (let i = 0; i < urls.length; i++) {
           await wapi.setComposing(numero, wapi.calcularTempoDigitação(msg));
-          const resImg = await wapi.sendImage(numero, urls[i], msg);
+          const resImg = await wapi.sendImage(numero, urls[i], "");
           if (!resImg.success) throw new Error(resImg.error);
           await registrarEnvio(campanhaId, contatoId, "imagem", resImg);
           if (i < urls.length - 1) await new Promise((r) => setTimeout(r, 1500));
+        }
+
+        // Depois envia o texto uma única vez, separado das imagens
+        if (msg.trim().length > 0) {
+          await new Promise((r) => setTimeout(r, (campanha.delayImagemTexto || 4) * 1000));
+          await wapi.setComposing(numero, wapi.calcularTempoDigitação(msg));
+          const resTxt = await wapi.sendText(numero, msg);
+          if (!resTxt.success) throw new Error(resTxt.error);
+          await registrarEnvio(campanhaId, contatoId, "texto", resTxt);
         }
 
       } else if (campanha.tipoDisparo === "audio" && campanha.audioUrl) {
