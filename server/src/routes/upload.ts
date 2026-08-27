@@ -107,31 +107,37 @@ router.post("/manual", async (req, res) => {
     const erros: string[] = [];
     let validos = 0;
     let invalidos = 0;
+    const PHONE_RE = /(?:\+?55[\s.-]?)?\(?\d{2}\)?[\s.-]?\d{4,5}[\s.-]?\d{4}/g;
 
-    for (let i = 0; i < linhas.length; i++) {
-      const raw = linhas[i];
-
-      // Separa número|nome
-      const partes = raw.split("|");
-      let numRaw = partes[0].trim();
-      const nome = (partes[1] || "").trim() || undefined;
-
-      // Remove tudo que não é dígito do número
-      let num = numRaw.replace(/\D/g, "");
-
-      if (!num.startsWith("55")) {
-        num = "55" + num;
+    linhas.forEach((linha, idx) => {
+      const barra = linha.indexOf("|");
+      let numPart = linha;
+      let nome: string | undefined;
+      if (barra !== -1) {
+        numPart = linha.slice(0, barra).trim();
+        nome = linha.slice(barra + 1).trim() || undefined;
       }
 
-      if (num.length < 12 || num.length > 13) {
+      const matches = numPart.match(PHONE_RE);
+      if (!matches || matches.length === 0) {
         invalidos++;
-        erros.push(`Linha ${i + 1}: número inválido "${numRaw}" (${num.length} dígitos)`);
-        continue;
+        erros.push(`Linha ${idx + 1}: nenhum número reconhecido em "${linha.slice(0, 30)}"`);
+        return;
       }
 
-      contatosParaSalvar.push({ numero: num, nome });
-      validos++;
-    }
+      matches.forEach((m) => {
+        let num = m.replace(/\D/g, "");
+        if (!num.startsWith("55")) num = "55" + num;
+
+        if (num.length < 12 || num.length > 13) {
+          invalidos++;
+          erros.push(`Linha ${idx + 1}: número inválido (${num.length} dígitos)`);
+          return;
+        }
+        contatosParaSalvar.push({ numero: num, nome: matches.length === 1 ? nome : undefined });
+        validos++;
+      });
+    });
 
     const contatosSalvos = [];
     for (const c of contatosParaSalvar) {

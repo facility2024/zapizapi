@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Upload, Send, X, FileSpreadsheet, Loader2, Eye, Type } from "lucide-react";
+import { Upload, Send, X, FileSpreadsheet, Loader2, Eye, Type, Check } from "lucide-react";
 import api from "../api";
 
 interface Contato {
@@ -21,6 +21,36 @@ interface UploadResult {
 
 type TipoDisparo = "texto" | "imagem_texto" | "audio";
 type ModoContato = "planilha" | "manual";
+
+type NumeroExtracao = { numero: string; nome?: string; valido: boolean };
+
+/** Extrai números de um texto (um por linha ou bloco com espaço/vírgula/tab/+), tolerando formatação. */
+function extrairNumeros(texto: string): NumeroExtracao[] {
+  const PHONE_RE = /(?:\+?55[\s.-]?)?\(?\d{2}\)?[\s.-]?\d{4,5}[\s.-]?\d{4}/g;
+  const out: NumeroExtracao[] = [];
+  const linhas = texto.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  for (const linha of linhas) {
+    const barra = linha.indexOf("|");
+    let numPart = linha;
+    let nome: string | undefined;
+    if (barra !== -1) {
+      numPart = linha.slice(0, barra).trim();
+      nome = linha.slice(barra + 1).trim() || undefined;
+    }
+    const matches = numPart.match(PHONE_RE);
+    if (!matches) continue;
+    matches.forEach((m) => {
+      let num = m.replace(/\D/g, "");
+      if (!num.startsWith("55")) num = "55" + num;
+      out.push({
+        numero: num,
+        nome: matches.length === 1 ? nome : undefined,
+        valido: num.length >= 12 && num.length <= 13,
+      });
+    });
+  }
+  return out;
+}
 
 export default function NovaCampanha() {
   const [nome, setNome] = useState("");
@@ -48,13 +78,9 @@ export default function NovaCampanha() {
   const variaveisDetectadas = modoContato === "planilha" ? (uploadResult?.headers || []) : [];
 
   // Contagens da entrada manual
-  const numerosLinhas = numerosManual.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-  const numerosValidos = numerosLinhas.filter((l) => {
-    const num = l.replace(/\D/g, "");
-    const final = num.startsWith("55") ? num : "55" + num;
-    return final.length >= 12 && final.length <= 13;
-  });
-  const numerosInvalidos = numerosLinhas.length - numerosValidos.length;
+  const contatosExtraidos = extrairNumeros(numerosManual);
+  const numerosValidos = contatosExtraidos.filter((c) => c.valido).length;
+  const numerosInvalidos = contatosExtraidos.length - numerosValidos;
 
   // Upload de planilha
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -352,10 +378,36 @@ export default function NovaCampanha() {
                 rows={8}
                 className="w-full bg-bg-primary border border-gray-700 rounded-lg px-4 py-3 text-sm focus:border-accent focus:outline-none resize-none font-mono"
               />
-              <div className="absolute bottom-3 right-3 text-xs text-gray-600">
-                {numerosLinhas.length} contatos
-              </div>
+               <div className="absolute bottom-3 right-3 text-xs text-gray-600">
+                 {contatosExtraidos.length} contatos
+               </div>
             </div>
+
+            {/* Validação por linha */}
+            {contatosExtraidos.length > 0 && (
+              <div className="space-y-1 max-h-44 overflow-y-auto text-xs font-mono bg-bg-primary rounded-lg p-3 border border-gray-800">
+                {contatosExtraidos.map((c, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    {c.valido ? (
+                      <Check className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                    ) : (
+                      <X className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                    )}
+                    <span className={c.valido ? "text-green-400" : "text-red-400"}>
+                      {c.numero}
+                      {c.nome ? ` (${c.nome})` : ""}
+                    </span>
+                    {!c.valido && (
+                      <span className="text-red-400/70">
+                        {c.numero.length === 14
+                          ? "(provável dígito faltando após o 55)"
+                          : `(${c.numero.length} dígitos — inválido)`}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Contadores */}
             <div className="flex items-center gap-4 text-xs">
@@ -608,7 +660,7 @@ export default function NovaCampanha() {
       {/* Botão enviar */}
       <button
         onClick={handleEnviar}
-        disabled={enviando || !nome || !textoMensagem || (modoContato === "planilha" ? !uploadResult?.contatos.length : numerosLinhas.length === 0)}
+        disabled={enviando || !nome || !textoMensagem || (modoContato === "planilha" ? !uploadResult?.contatos.length : contatosExtraidos.length === 0)}
         className="w-full py-4 bg-accent hover:bg-accent-light disabled:opacity-40 rounded-xl font-semibold transition-all shadow-glow-sm hover:shadow-glow flex items-center justify-center gap-3"
       >
         {enviando ? (
