@@ -183,7 +183,7 @@ export default function NovaCampanha() {
     let contatosParaEnviar: Contato[] = [];
 
     if (modoContato === "manual") {
-      if (numerosLinhas.length === 0) {
+      if (contatosExtraidos.length === 0) {
         setMensagemErro("Adicione pelo menos um número");
         return;
       }
