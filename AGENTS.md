@@ -70,3 +70,5 @@ O app roda como **um único serviço**: o Express serve a API (`:3001`) e també
 4. **Porta**: expõe a `PORT` (padrão 3001).
 5. **Variáveis de ambiente** (igual ao `.env.example`): `WAPI_INSTANCE_ID`, `WAPI_TOKEN`, `WAPI_BASE_URL`, `DATABASE_URL="file:./dev.db"`, `PORT`.
 6. **Banco persistente**: o SQLite grava em `server/prisma/dev.db`. Monte um **volume persistente** nesse caminho (ou em `server/prisma`) para não perder os dados ao reiniciar o container. Para usar Postgres/Supabase na nuvem, troque `DATABASE_URL` e adapte o `db.ts`/`schema.prisma` (espelho em `server/supabase.sql`).
+
+Alternativamente, use o **`Dockerfile`** na raiz (imagem única que builda o client e sobe o server servindo API + frontend). No Easypanel, basta apontar o serviço para o repo com o Dockerfile; o `CMD` já roda `prisma db push` + `npm start`.
