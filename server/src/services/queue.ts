@@ -98,6 +98,7 @@ export async function processarFila(): Promise<void> {
   if (processando || fila.length === 0) return;
   processando = true;
 
+  let pararPorConexao = false;
   console.log(`[FILA] Iniciando processamento com ${fila.length} contatos na fila`);
 
   // Delay inicial antes do primeiro envio (10-20s para "aquecer")
@@ -114,6 +115,21 @@ export async function processarFila(): Promise<void> {
     const item = fila.shift()!;
     const { campanha, contato, campanhaId, contatoId } = item;
 
+    // Verifica a conexão ANTES de marcar o contato como "enviando"
+    const status = await wapi.checkStatus();
+    if (status.status !== "connected") {
+      // Devolve o item à fila (continua pendente) e pausa a campanha
+      fila.unshift(item);
+      await prisma.campanha.update({
+        where: { id: campanhaId },
+        data: { status: "pausada" },
+      });
+      notify(campanhaId, "", "conexao_perdida", "Instância WhatsApp desconectada. Reconecte na aba Conectar e retome a campanha.");
+      console.error(`[FILA] ⚠️ Instância desconectada — campanha ${campanhaId} pausada. Reconecte e retome.`);
+      pararPorConexao = true;
+      break;
+    }
+
     try {
       // Atualiza status para "enviando"
       await prisma.campanhaContato.update({
@@ -121,12 +137,6 @@ export async function processarFila(): Promise<void> {
         data: { status: "enviando" },
       });
       notify(campanhaId, contatoId, "enviando");
-
-      // Verifica status da conexão
-      const status = await wapi.checkStatus();
-      if (status.status !== "connected") {
-        throw new Error("Instância WhatsApp desconectada");
-      }
 
       const numero = contato.numero;
       const temNome = contato.nome && contato.nome.trim().length > 0;
@@ -212,8 +222,8 @@ export async function processarFila(): Promise<void> {
     }
   }
 
-  // Campanha concluída
-  if (campanhaAtualId && !cancelado) {
+  // Campanha concluída (só se não parou por falta de conexão e não foi cancelada)
+  if (campanhaAtualId && !cancelado && !pararPorConexao) {
     await prisma.campanha.update({
       where: { id: campanhaAtualId },
       data: { status: "concluida" },

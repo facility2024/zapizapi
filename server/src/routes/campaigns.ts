@@ -129,6 +129,8 @@ router.post("/:id/pause", async (req, res) => {
 router.post("/:id/resume", async (req, res) => {
   queue.retomarFila();
   await prisma.campanha.update({ where: { id: req.params.id }, data: { status: "em_andamento" } });
+  // Reinicia o processamento caso a fila tenha parado (ex.: por desconexão)
+  queue.processarFila().catch((e) => console.error("[FILA] Erro ao retomar:", e));
   res.json({ message: "Campanha retomada" });
 });
 
