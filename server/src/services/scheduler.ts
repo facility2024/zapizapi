@@ -271,9 +271,19 @@ export function iniciarScheduler() {
     log("Scheduler já iniciado");
     return;
   }
+  // Watchdog da fila: recupera campanhas em_andamento travadas (fila RAM perdida)
+  const watchdog = async () => {
+    try {
+      const { recuperarCampanhasTravadas } = await import("./queue.js");
+      await recuperarCampanhasTravadas();
+    } catch (e) {
+      console.error("[SCHEDULER] Watchdog fila erro:", e);
+    }
+  };
   // Verifica a cada 30s (mais responsivo que cron de 1min)
   intervalId = setInterval(() => {
     processarAgendamentos().catch((e) => console.error("[SCHEDULER] Erro ciclo:", e));
+    watchdog().catch(() => {});
   }, 30_000);
 
   // Também roda via cron a cada minuto como fallback
@@ -282,7 +292,10 @@ export function iniciarScheduler() {
   });
 
   // Roda uma vez no boot (após 5s para DB estar pronto)
-  setTimeout(() => processarAgendamentos().catch(console.error), 5000);
+  setTimeout(() => {
+    processarAgendamentos().catch(console.error);
+    import("./queue.js").then((m) => m.recuperarCampanhasTravadas().catch(console.error));
+  }, 5000);
   log("Scheduler iniciado (30s interval + cron 1min) — fuso: America/Sao_Paulo, janela 08-22 BRT");
 }
 

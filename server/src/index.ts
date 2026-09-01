@@ -16,7 +16,7 @@ import uploadRoutes from "./routes/upload.js";
 import campaignRoutes from "./routes/campaigns.js";
 import notificacaoRoutes from "./routes/notificacao.js";
 import agendamentosRoutes from "./routes/agendamentos.js";
-import { onStatusUpdate } from "./services/queue.js";
+import { onStatusUpdate, recuperarCampanhasTravadas } from "./services/queue.js";
 import { prisma } from "./db.js";
 import { iniciarScheduler } from "./services/scheduler.js";
 
@@ -77,6 +77,12 @@ httpServer.listen(PORT, () => {
   console.log(`🚀 Zapizapi server rodando na porta ${PORT}`);
   console.log(`   http://localhost:${PORT}`);
   iniciarScheduler();
+  // Recupera fila perdida após restart (campanhas em_andamento)
+  setTimeout(() => {
+    recuperarCampanhasTravadas()
+      .then((n) => n && console.log(`[BOOT] ${n} campanha(s) travada(s) recuperada(s)`))
+      .catch((e) => console.error("[BOOT] Falha ao recuperar fila:", e));
+  }, 7000);
 });
 
 // Graceful shutdown

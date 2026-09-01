@@ -106,13 +106,22 @@ export default function Historico() {
                       </button>
                     )}
                     {c.status === "em_andamento" && (
-                      <button
-                        onClick={() => acaoCampanha(c.id, "pause")}
-                        className="p-2 bg-yellow-400/10 text-yellow-400 rounded-lg hover:bg-yellow-400/20 transition-colors"
-                        title="Pausar"
-                      >
-                        <Pause className="w-4 h-4" />
-                      </button>
+                      <>
+                        <button
+                          onClick={() => acaoCampanha(c.id, "pause")}
+                          className="p-2 bg-yellow-400/10 text-yellow-400 rounded-lg hover:bg-yellow-400/20 transition-colors"
+                          title="Pausar"
+                        >
+                          <Pause className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => acaoCampanha(c.id, "resume")}
+                          className="p-2 bg-accent/10 text-accent-light rounded-lg hover:bg-accent/20 transition-colors"
+                          title="Retomar (use se travou)"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                      </>
                     )}
                     {c.status === "pausada" && (
                       <button

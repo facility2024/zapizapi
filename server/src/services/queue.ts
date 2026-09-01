@@ -97,6 +97,7 @@ export async function enfileirarCampanha(campanhaId: string): Promise<void> {
 export async function processarFila(): Promise<void> {
   if (processando || fila.length === 0) return;
   processando = true;
+  try {
 
   let pararPorConexao = false;
   console.log(`[FILA] Iniciando processamento com ${fila.length} contatos na fila`);
@@ -231,9 +232,10 @@ export async function processarFila(): Promise<void> {
     notify(campanhaAtualId, "", "concluida");
     console.log(`[FILA] Campanha ${campanhaAtualId} concluída`);
   }
-
-  processando = false;
-  campanhaAtualId = null;
+  } finally {
+    processando = false;
+    campanhaAtualId = null;
+  }
 }
 
 async function registrarEnvio(campanhaId: string, contatoId: string, tipo: string, resultado: { success: boolean; data?: unknown; error?: string }) {
@@ -272,4 +274,45 @@ export function isPausado(): boolean {
 
 export function getTamanhoFila(): number {
   return fila.length;
+}
+
+export function getCampanhaAtualId(): string | null {
+  return campanhaAtualId;
+}
+
+/**
+ * Recupera campanhas travadas em em_andamento sem fila ativa.
+ * Chamado no boot e pelo watchdog do scheduler.
+ */
+export async function recuperarCampanhasTravadas(): Promise<number> {
+  if (processando) return 0;
+  const travadas = await prisma.campanha.findMany({
+    where: { status: "em_andamento" },
+    take: 5,
+  });
+  let recuperadas = 0;
+  for (const camp of travadas) {
+    const naFila = fila.filter((f) => f.campanhaId === camp.id).length;
+    if (naFila > 0) continue;
+    const pendentes = await prisma.campanhaContato.count({
+      where: { campanhaId: camp.id, status: { in: ["pendente", "enviando"] } },
+    });
+    // "enviando" travado há >2min volta para pendente
+    if (pendentes === 0) {
+      await prisma.campanha.update({ where: { id: camp.id }, data: { status: "concluida" } });
+      notify(camp.id, "", "concluida");
+      continue;
+    }
+    await prisma.campanhaContato.updateMany({
+      where: { campanhaId: camp.id, status: "enviando" },
+      data: { status: "pendente" },
+    });
+    console.log(`[FILA] Recuperando campanha travada ${camp.id} (${pendentes} pendentes)`);
+    await enfileirarCampanha(camp.id);
+    // não aguarda - dispara em background
+    processarFila().catch((e) => console.error("[FILA] Erro na recuperação:", e));
+    recuperadas++;
+    break; // uma por vez para não sobrecarregar
+  }
+  return recuperadas;
 }
