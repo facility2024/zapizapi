@@ -8,16 +8,19 @@ import {
   LayoutDashboard,
   Menu,
   X,
+  Clock,
 } from "lucide-react";
 import Dashboard from "./pages/Dashboard";
 import Conectar from "./pages/Conectar";
 import NovaCampanha from "./pages/NovaCampanha";
 import Historico from "./pages/Historico";
+import Agendamentos from "./pages/Agendamentos";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/conectar", label: "Conectar", icon: Link2 },
   { to: "/nova-campanha", label: "Nova Campanha", icon: Send },
+  { to: "/agendamentos", label: "Agendamentos", icon: Clock },
   { to: "/historico", label: "Histórico", icon: History },
 ];
 
@@ -114,6 +117,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/conectar" element={<Conectar />} />
           <Route path="/nova-campanha" element={<NovaCampanha />} />
+          <Route path="/agendamentos" element={<Agendamentos />} />
           <Route path="/historico" element={<Historico />} />
         </Routes>
       </main>

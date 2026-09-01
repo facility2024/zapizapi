@@ -14,8 +14,11 @@ import { fileURLToPath } from "url";
 import wapiRoutes from "./routes/wapi.js";
 import uploadRoutes from "./routes/upload.js";
 import campaignRoutes from "./routes/campaigns.js";
+import notificacaoRoutes from "./routes/notificacao.js";
+import agendamentosRoutes from "./routes/agendamentos.js";
 import { onStatusUpdate } from "./services/queue.js";
 import { prisma } from "./db.js";
+import { iniciarScheduler } from "./services/scheduler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -38,6 +41,8 @@ app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 app.use("/api/wapi", wapiRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/campaigns", campaignRoutes);
+app.use("/api/notificacao", notificacaoRoutes);
+app.use("/api/agendamentos", agendamentosRoutes);
 
 // Frontend (produção): serve o build do client e SPA fallback
 const clientDist = path.join(__dirname, "..", "..", "client", "dist");
@@ -71,6 +76,7 @@ app.get("/api/health", (_req, res) => {
 httpServer.listen(PORT, () => {
   console.log(`🚀 Zapizapi server rodando na porta ${PORT}`);
   console.log(`   http://localhost:${PORT}`);
+  iniciarScheduler();
 });
 
 // Graceful shutdown

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Upload, Send, X, FileSpreadsheet, Loader2, Eye, Type, Check } from "lucide-react";
+import { Upload, Send, X, FileSpreadsheet, Loader2, Eye, Type, Check, Calendar, Clock } from "lucide-react";
 import api from "../api";
 
 interface Contato {
@@ -63,6 +63,10 @@ export default function NovaCampanha() {
   const [delayMin, setDelayMin] = useState(20);
   const [delayMax, setDelayMax] = useState(40);
   const [delayImgTxt, setDelayImgTxt] = useState(4);
+  const [agendar, setAgendar] = useState(false);
+  const [agendarData, setAgendarData] = useState("");
+  const [agendarHora, setAgendarHora] = useState("");
+  const [recorrencia, setRecorrencia] = useState("nenhuma");
 
   const [modoContato, setModoContato] = useState<ModoContato>("planilha");
   const [numerosManual, setNumerosManual] = useState("");
@@ -232,7 +236,14 @@ export default function NovaCampanha() {
         else { setMensagemErro("Erro ao fazer upload do áudio"); setEnviando(false); return; }
       }
 
-      // Cria a campanha
+      // Monta agendarPara em BRT (se agendamento ativo)
+      let agendarParaISO: string | undefined;
+      if (agendar) {
+        if (!agendarData || !agendarHora) { setMensagemErro("Informe data e hora do agendamento (Horário de Brasília)"); setEnviando(false); enviandoRef.current=false; return; }
+        agendarParaISO = `${agendarData}T${agendarHora}:00-03:00`;
+      }
+
+      // Cria a campanha (com ou sem agendamento)
       const { data: campanha } = await api.post<{ id: string }>("/campaigns", {
         nome,
         tipoDisparo,
@@ -244,10 +255,14 @@ export default function NovaCampanha() {
         delayEntreMsgMin: delayMin,
         delayEntreMsgMax: delayMax,
         delayImagemTexto: delayImgTxt,
+        agendarPara: agendarParaISO,
+        recorrencia,
       });
 
-      // Auto-inicia a campanha
-      await api.post(`/campaigns/${campanha.id}/start`);
+      // Se agendada, não inicia imediatamente — scheduler dispara em BRT
+      if (!agendarParaISO) {
+        await api.post(`/campaigns/${campanha.id}/start`);
+      }
 
       setNome("");
       setTextoMensagem("");
@@ -255,8 +270,11 @@ export default function NovaCampanha() {
       setUploadResult(null);
       setImagensFiles([]);
       setImagensPreviews([]);
+      setAgendar(false);
+      setAgendarData("");
+      setAgendarHora("");
       setMensagemErro("");
-      alert("Campanha criada e iniciada!");
+      alert(agendarParaISO ? "Campanha agendada! Será enviada no horário de Brasília." : "Campanha criada e iniciada!");
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } }; message?: string };
       setMensagemErro(error.response?.data?.error || error.message || "Erro ao criar campanha");
@@ -661,9 +679,42 @@ export default function NovaCampanha() {
         )}
       </div>
 
+      {/* Agendamento */}
+      <div className="bg-bg-card border border-gray-800 rounded-xl p-6">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Calendar className="w-4 h-4" /> 3. Agendamento <span className="text-accent-light normal-case tracking-normal">— Horário de Brasília (America/Sao_Paulo)</span></h2>
+        <label className="flex items-center gap-3 mb-4 cursor-pointer">
+          <input type="checkbox" checked={agendar} onChange={e=>setAgendar(e.target.checked)} className="w-4 h-4 accent-accent" />
+          <span className="text-sm">Agendar envio (em vez de enviar agora)</span>
+        </label>
+        {agendar && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Data (calendário)</label>
+                <input type="date" value={agendarData} onChange={e=>setAgendarData(e.target.value)} className="w-full bg-bg-primary border border-gray-700 rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Hora (24h HH:mm) <span className="text-accent-light">— Horário de Brasília</span></label>
+                <input type="time" value={agendarHora} onChange={e=>setAgendarHora(e.target.value)} className="w-full bg-bg-primary border border-gray-700 rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Recorrência</label>
+                <select value={recorrencia} onChange={e=>setRecorrencia(e.target.value)} className="w-full bg-bg-primary border border-gray-700 rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none">
+                  <option value="nenhuma">Nenhuma</option>
+                  <option value="diaria">Diária</option>
+                  <option value="semanal">Semanal</option>
+                  <option value="mensal">Mensal</option>
+                </select>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 flex items-center gap-1"><Clock className="w-3 h-3" /> Armazenado em UTC, exibido como Horário de Brasília. Janela permitida 08:00–22:00 BRT (fora disso adia para 08:00). Não permite passado.</p>
+          </div>
+        )}
+      </div>
+
       {/* Configurações de delay */}
       <div className="bg-bg-card border border-gray-800 rounded-xl p-6">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">3. Configurações de Envio</h2>
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">4. Configurações de Envio</h2>
 
         <div className="grid grid-cols-3 gap-4">
           <div>
@@ -706,6 +757,11 @@ export default function NovaCampanha() {
           <>
             <Loader2 className="w-5 h-5 animate-spin" />
             Criando campanha...
+          </>
+        ) : agendar ? (
+          <>
+            <Calendar className="w-5 h-5" />
+            Agendar Campanha <span className="text-xs opacity-80">(Horário de Brasília)</span>
           </>
         ) : (
           <>

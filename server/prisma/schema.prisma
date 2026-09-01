@@ -28,7 +28,11 @@ model Campanha {
   audioUrl           String?
   variavelFallback   String?           // fallback para variáveis vazias (ex: "tudo bem?")
   status             String            @default("rascunho") // rascunho, agendada, em_andamento, pausada, concluida, cancelada
-  agendarPara        DateTime?
+  agendarPara        DateTime?         // armazenado em UTC, entrada em America/Sao_Paulo
+  recorrencia        String?           @default("nenhuma") // nenhuma | diaria | semanal | mensal
+  tentativas         Int               @default(0)
+  maxTentativas      Int               @default(3)
+  ultimoErro         String?
   totalContatos      Int               @default(0)
   enviados           Int               @default(0)
   erros              Int               @default(0)
@@ -41,6 +45,35 @@ model Campanha {
   updatedAt          DateTime          @updatedAt
   contatos           CampanhaContato[]
   envios             Envio[]
+  agendamentos       Agendamento[]
+}
+
+// Agendamento genérico (estrutura solicitada no prompt)
+model Agendamento {
+  id             String   @id @default(uuid())
+  mensagem       String   // texto ou referência a template
+  destinatarios  String   // JSON array de números ["5511...", "5521..."]
+  dataHoraEnvio  DateTime // armazenado em UTC
+  status         String   @default("pendente") // pendente | enviado | falhou | cancelado
+  recorrencia    String   @default("nenhuma")  // nenhuma | diaria | semanal | mensal
+  tentativas     Int      @default(0)
+  maxTentativas  Int      @default(3)
+  ultimoErro     String?
+  campanhaId     String?  // vínculo opcional com Campanha
+  campanha       Campanha? @relation(fields: [campanhaId], references: [id])
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+  logs           AgendamentoLog[]
+}
+
+model AgendamentoLog {
+  id            String   @id @default(uuid())
+  agendamentoId String?
+  campanhaId    String?
+  acao          String   // agendado | disparado | enviado | falhou | cancelado | adiado_horario | retry
+  detalhes      String?
+  criadoEm      DateTime @default(now())
+  agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
 }
 
 model CampanhaContato {

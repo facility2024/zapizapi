@@ -88,7 +88,9 @@ export default function Historico() {
                     </div>
                     <p className="text-xs text-gray-500">
                       {c.totalContatos} contatos · {c.enviados} enviados · {c.erros} erros
-                      {c.agendarPara && ` · Agendado para ${new Date(c.agendarPara).toLocaleString("pt-BR")}`}
+                      {(c as any).agendarParaLabel && ` · ${(c as any).agendarParaLabel}`}
+                      {c.agendarPara && !(c as any).agendarParaLabel && ` · Agendado para ${new Date(c.agendarPara).toLocaleString("pt-BR")}`}
+                      {(c as any).recorrencia && (c as any).recorrencia !== "nenhuma" && ` · Recorrência: ${(c as any).recorrencia}`}
                     </p>
                   </div>
 

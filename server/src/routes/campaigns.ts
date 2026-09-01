@@ -7,16 +7,22 @@ import { Router } from "express";
 import * as queue from "../services/queue.js";
 import { gerarExemplos, validarSpintax, detectarVariaveis, Contato } from "../services/messageParser.js";
 import { prisma } from "../db.js";
+import { validarAgendamento, paraBRT, formatarBRT, paraUTC, registrarLog } from "../services/agendamentoService.js";
 
 const router = Router();
 
-// GET /api/campaigns — lista campanhas
+// GET /api/campaigns — lista campanhas (com conversão BRT)
 router.get("/", async (_req, res) => {
   const campanhas = await prisma.campanha.findMany({
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { contatos: true, envios: true } } },
   });
-  res.json(campanhas);
+  const comBRT = campanhas.map((c: any) => ({
+    ...c,
+    agendarParaBRT: c.agendarPara ? paraBRT(c.agendarPara) : null,
+    agendarParaLabel: c.agendarPara ? formatarBRT(c.agendarPara) : null,
+  }));
+  res.json(comBRT);
 });
 
 // GET /api/campaigns/:id — detalhes da campanha
@@ -32,7 +38,11 @@ router.get("/:id", async (req, res) => {
     res.status(404).json({ error: "Campanha não encontrada" });
     return;
   }
-  res.json(campanha);
+  res.json({
+    ...campanha,
+    agendarParaBRT: campanha.agendarPara ? paraBRT(campanha.agendarPara) : null,
+    agendarParaLabel: campanha.agendarPara ? formatarBRT(campanha.agendarPara) : null,
+  } as any);
 });
 
 // POST /api/campaigns — cria campanha
@@ -66,6 +76,19 @@ router.post("/", async (req, res) => {
     return;
   }
 
+  // Validação de agendamento: converte BRT -> UTC e valida passado
+  let agendarParaUTC: Date | null = null;
+  if (agendarPara) {
+    try {
+      const v = validarAgendamento(agendarPara, req.body.recorrencia || "nenhuma");
+      agendarParaUTC = v.utc;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      res.status(400).json({ error: msg });
+      return;
+    }
+  }
+
   const campanha = await prisma.campanha.create({
     data: {
       nome,
@@ -75,7 +98,8 @@ router.post("/", async (req, res) => {
       imagensUrls: imagensUrls || null,
       audioUrl: audioUrl || null,
       variavelFallback: variavelFallback || null,
-      agendarPara: agendarPara ? new Date(agendarPara) : null,
+      agendarPara: agendarParaUTC,
+      recorrencia: req.body.recorrencia || "nenhuma",
       status: agendarPara ? "agendada" : "rascunho",
       delayEntreMsgMin: delayEntreMsgMin || 20,
       delayEntreMsgMax: delayEntreMsgMax || 40,
@@ -85,6 +109,9 @@ router.post("/", async (req, res) => {
       totalContatos: contatoIds?.length || 0,
     },
   });
+  if (agendarParaUTC) {
+    await registrarLog({ campanhaId: campanha.id, acao: "agendado", detalhes: `Agendada para ${formatarBRT(agendarParaUTC)}` });
+  }
 
   // Vincula contatos
   if (contatoIds && contatoIds.length > 0) {
@@ -134,10 +161,49 @@ router.post("/:id/resume", async (req, res) => {
   res.json({ message: "Campanha retomada" });
 });
 
+// PUT /api/campaigns/:id — edita campanha (permite editar agendamento antes do disparo)
+router.put("/:id", async (req, res) => {
+  const existente = await prisma.campanha.findUnique({ where: { id: req.params.id } });
+  if (!existente) { res.status(404).json({ error: "Campanha não encontrada" }); return; }
+  if (!["rascunho", "agendada", "pausada"].includes(existente.status)) {
+    res.status(400).json({ error: `Não é possível editar campanha com status "${existente.status}"` }); return;
+  }
+  const { nome, textoMensagem, agendarPara, recorrencia, limitePorHora, limitePorDia } = req.body;
+  const update: any = {};
+  if (nome !== undefined) update.nome = nome;
+  if (textoMensagem !== undefined) {
+    const v = validarSpintax(textoMensagem);
+    if (!v.valido) { res.status(400).json({ error: `Spintax inválido: ${v.erro}` }); return; }
+    update.textoMensagem = textoMensagem;
+  }
+  if (recorrencia !== undefined) update.recorrencia = recorrencia;
+  if (limitePorHora !== undefined) update.limitePorHora = limitePorHora;
+  if (limitePorDia !== undefined) update.limitePorDia = limitePorDia;
+  if (agendarPara !== undefined) {
+    if (agendarPara === null || agendarPara === "") {
+      update.agendarPara = null;
+      update.status = "rascunho";
+    } else {
+      try {
+        const v = validarAgendamento(agendarPara, recorrencia || existente.recorrencia || "nenhuma");
+        update.agendarPara = v.utc;
+        update.status = "agendada";
+        await registrarLog({ campanhaId: existente.id, acao: "reagendado", detalhes: `Reagendada para ${formatarBRT(v.utc)}` });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        res.status(400).json({ error: msg }); return;
+      }
+    }
+  }
+  const updated = await prisma.campanha.update({ where: { id: existente.id }, data: update });
+  res.json({ ...updated, agendarParaBRT: updated.agendarPara ? paraBRT(updated.agendarPara) : null, agendarParaLabel: updated.agendarPara ? formatarBRT(updated.agendarPara) : null } as any);
+});
+
 // POST /api/campaigns/:id/cancel — cancela campanha
 router.post("/:id/cancel", async (req, res) => {
   queue.cancelarFila();
   await prisma.campanha.update({ where: { id: req.params.id }, data: { status: "cancelada" } });
+  await registrarLog({ campanhaId: req.params.id, acao: "cancelado", detalhes: "Cancelada pelo usuário" });
   res.json({ message: "Campanha cancelada" });
 });
 
