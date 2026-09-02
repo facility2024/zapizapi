@@ -23,8 +23,9 @@ export default function Conectar() {
   }, []);
 
   async function verificarStatus() {
+    setLoading(true);
     try {
-      const { data } = await api.get("/wapi/status");
+      const { data } = await api.get("/wapi/status", { timeout: 40000 });
       setStatus(data.status);
       if (data.status === "connected") {
         setQr(null);
@@ -89,14 +90,6 @@ export default function Conectar() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 text-accent animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8">
       <div>
@@ -110,10 +103,14 @@ export default function Conectar() {
           ? "bg-green-400/10 border-green-400/30 text-green-400"
           : "bg-red-400/10 border-red-400/30 text-red-400"
       }`}>
-        {status === "connected" ? <Wifi className="w-5 h-5" /> : <WifiOff className="w-5 h-5" />}
+        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : status === "connected" ? <Wifi className="w-5 h-5" /> : <WifiOff className="w-5 h-5" />}
         <span className="font-medium">
-          {status === "connected" ? "Conectado" : "Desconectado"}
+          {loading ? "Verificando..." : status === "connected" ? "Conectado" : "Desconectado"}
         </span>
+        {loading && <span className="text-xs opacity-60 ml-auto">W-API pode demorar ~10s</span>}
+        {!loading && status !== "connected" && (
+          <button onClick={verificarStatus} className="ml-auto text-xs underline opacity-70 hover:opacity-100">Atualizar</button>
+        )}
       </div>
 
       {/* Erro */}
