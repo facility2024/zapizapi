@@ -3,6 +3,7 @@
  * Cliente para comunicação com a W-API (w-api.app)
  */
 
+import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -11,9 +12,12 @@ import axios, { AxiosInstance } from "axios";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
 
-const WAPI_BASE_URL = process.env.WAPI_BASE_URL || "https://api.w-api.app";
-const WAPI_INSTANCE_ID = process.env.WAPI_INSTANCE_ID || "";
-const WAPI_TOKEN = process.env.WAPI_TOKEN || "";
+function getEnv(name: string, fallback = "") {
+  return process.env[name] || fallback;
+}
+function getBaseUrl() { return getEnv("WAPI_BASE_URL", "https://api.w-api.app"); }
+function getInstanceId() { return getEnv("WAPI_INSTANCE_ID"); }
+function getToken() { return getEnv("WAPI_TOKEN"); }
 
 interface WapiResponse {
   success: boolean;
@@ -31,16 +35,23 @@ interface ConnectionStatus {
 }
 
 let api: AxiosInstance | null = null;
+let cachedToken = "";
+let cachedBaseUrl = "";
 
 function getClient(): AxiosInstance {
-  if (!api) {
+  const baseUrl = getBaseUrl();
+  const token = getToken();
+  // recria se baseUrl/token mudaram (ex: .env alterado sem restart) ou primeira vez
+  if (!api || token !== cachedToken || baseUrl !== cachedBaseUrl) {
+    cachedToken = token;
+    cachedBaseUrl = baseUrl;
     api = axios.create({
-      baseURL: WAPI_BASE_URL,
+      baseURL: baseUrl,
       headers: {
-        Authorization: `Bearer ${WAPI_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      timeout: 15000,
+      timeout: 35000,
     });
   }
   return api;
@@ -88,11 +99,16 @@ function toBase64DataUrl(filePath: string): string {
 export async function checkStatus(): Promise<ConnectionStatus> {
   try {
     const client = getClient();
-    const { data } = await client.get(`/v1/instance/status-instance?instanceId=${WAPI_INSTANCE_ID}`);
+    const instanceId = getInstanceId();
+    if (!instanceId || !getToken()) {
+      console.error("[WAPI] WAPI_INSTANCE_ID ou WAPI_TOKEN não configurados");
+      return { status: "disconnected" };
+    }
+    const { data } = await client.get(`/v1/instance/status-instance?instanceId=${instanceId}`);
     return { status: data.connected === true ? "connected" : "disconnected" };
   } catch (err: unknown) {
-    const error = err as { response?: { data?: unknown }; message?: string };
-    console.error("[WAPI] Erro ao verificar status:", error.response?.data || error.message);
+    const error = err as { response?: { data?: unknown }; message?: string; code?: string };
+    console.error("[WAPI] Erro ao verificar status:", error.response?.data || error.message, error.code || "");
     return { status: "disconnected" };
   }
 }
@@ -114,8 +130,10 @@ export function marcarDesconectado(): void {
  */
 export async function getQrCode(): Promise<QrCodeResponse> {
   const client = getClient();
+  const instanceId = getInstanceId();
+  if (!instanceId || !getToken()) throw new Error("WAPI_INSTANCE_ID ou WAPI_TOKEN não configurados no server/.env");
   try {
-    const { data } = await client.get(`/v1/instance/qr-code?instanceId=${WAPI_INSTANCE_ID}`);
+    const { data } = await client.get(`/v1/instance/qr-code?instanceId=${instanceId}`);
     // W-API retorna { error, instanceId, qrcode: "data:image/png;base64,..." }
     const qr = data.qrcode || data.qrCode || data.base64 || "";
     if (!qr) {
@@ -142,7 +160,7 @@ export async function getQrCode(): Promise<QrCodeResponse> {
  */
 export async function restartInstance(): Promise<void> {
   const client = getClient();
-  await client.get(`/v1/instance/restart?instanceId=${WAPI_INSTANCE_ID}`);
+  await client.get(`/v1/instance/restart?instanceId=${getInstanceId()}`);
 }
 
 /**
@@ -152,7 +170,7 @@ export async function restartInstance(): Promise<void> {
 export async function sendText(numero: string, texto: string): Promise<WapiResponse> {
   try {
     const client = getClient();
-    const { data } = await client.post(`/v1/message/send-text?instanceId=${WAPI_INSTANCE_ID}`, {
+    const { data } = await client.post(`/v1/message/send-text?instanceId=${getInstanceId()}`, {
       phone: numero,
       message: texto,
     });
@@ -174,7 +192,7 @@ export async function sendImage(numero: string, imageUrl: string, caption?: stri
   try {
     const client = getClient();
     const imageData = toBase64DataUrl(imageUrl);
-    const { data } = await client.post(`/v1/message/send-image?instanceId=${WAPI_INSTANCE_ID}`, {
+    const { data } = await client.post(`/v1/message/send-image?instanceId=${getInstanceId()}`, {
       phone: numero,
       image: imageData,
       caption: caption || "",
@@ -197,7 +215,7 @@ export async function sendAudio(numero: string, audioUrl: string): Promise<WapiR
   try {
     const client = getClient();
     const audioData = toBase64DataUrl(audioUrl);
-    const { data } = await client.post(`/v1/message/send-audio?instanceId=${WAPI_INSTANCE_ID}`, {
+    const { data } = await client.post(`/v1/message/send-audio?instanceId=${getInstanceId()}`, {
       phone: numero,
       audio: audioData,
       ptt: true,
@@ -219,7 +237,7 @@ export async function sendAudio(numero: string, audioUrl: string): Promise<WapiR
 export async function setComposing(numero: string, durationMs: number): Promise<void> {
   try {
     const client = getClient();
-    await client.post(`/v1/chats/send-presence?instanceId=${WAPI_INSTANCE_ID}`, {
+    await client.post(`/v1/chats/send-presence?instanceId=${getInstanceId()}`, {
       phone: numero,
       presence: "composing",
       delay: Math.floor(durationMs / 1000),

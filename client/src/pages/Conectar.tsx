@@ -47,8 +47,16 @@ export default function Conectar() {
     setQr(null);
     setError(null);
     try {
-      const { data } = await api.get<QrResponse>("/wapi/qrcode");
-      setQr(data.base64 || data.qrCode);
+      const { data } = await api.get<QrResponse & { connected?: boolean; message?: string }>("/wapi/qrcode");
+      if ((data as any).connected) {
+        setStatus("connected");
+        setError(null);
+        setPolling(false);
+        return;
+      }
+      const code = (data as any).base64 || (data as any).qrCode || (data as any).qrcode;
+      if (!code) throw new Error("QR Code vazio retornado pela W-API");
+      setQr(code);
 
       // Polling até conectar
       if (intervalRef.current) clearInterval(intervalRef.current);

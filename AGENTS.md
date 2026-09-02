@@ -13,7 +13,7 @@ npm install && cd server && npm install && cd ../client && npm install
 # Env + banco — ANTES do primeiro dev
 cp server/.env.example server/.env   # preencha WAPI_* e DATABASE_URL
 cd server && npx prisma generate && npx prisma db push
-# atalhos: npm run db:generate / npm run db:push
+# atalhos: npm run db:generate / npm run db:push (server/package.json:9)
 
 # Dev — raiz sobe ambos via concurrently (server :3001 + client :5173)
 npm run dev              # ou start_dev.bat no Windows
@@ -22,7 +22,7 @@ cd client && npm run dev # só Vite — proxy /api e /uploads -> :3001 (client/v
 
 # Build — só client é compilado; server roda .ts via tsx
 npm run build            # = build:client -> client/dist
-npm start                # cd server && tsx src/index.ts (usado no Docker CMD)
+npm start                # cd server && tsx src/index.ts (Docker CMD em Dockerfile:42)
 ```
 
 Sem testes/lint/format/CI — não procure (`server/package.json:11` `db:seed` aponta p/ `prisma/seed.ts` inexistente). Repo tem espaços no caminho (`projeto   teste1`) — use aspas no PowerShell.
@@ -32,8 +32,8 @@ Sem testes/lint/format/CI — não procure (`server/package.json:11` `db:seed` a
 `server/.env.example` -> `server/.env` (gitignore). Chaves:
 - `WAPI_INSTANCE_ID`, `WAPI_TOKEN` obrigatórios; `WAPI_BASE_URL` default `https://api.w-api.app` em `server/src/services/wapiClient.ts:14` e `.env.example:3` (mas `docker-compose.yml:9` usa `https://api.wapi.chat`).
 - `DATABASE_URL="file:./dev.db"` local / `file:/app/data/dev.db` Docker, `PORT=3001`.
-- `SMTP_HOST/PORT/USER/PASSWORD/NOTIFY_TO` Hostinger (`server/src/services/emailService.ts`) — opcional fora de prod.
-- Sem `WAPI_*`, `queue.ts:119` checa `wapiClient.ts:88` `checkStatus()` e pausa campanha (`status=pausada` + evento `conexao_perdida`).
+- `SMTP_HOST/PORT/USER/PASSWORD/NOTIFY_TO` Hostinger (`server/src/services/emailService.ts`) — opcional fora de prod; teste com `npm run test:smtp` (`server/test-smtp.ts`).
+- Sem `WAPI_*`, `queue.ts:120` checa `wapiClient.ts:88` `checkStatus()` e pausa campanha (`status=pausada` + evento `conexao_perdida`).
 
 ## Arquitetura
 
@@ -47,7 +47,7 @@ Sem testes/lint/format/CI — não procure (`server/package.json:11` `db:seed` a
 ## Convenções (que quebram se ignoradas)
 
 - **Imports server com `.js`** mesmo em `.ts` (`server/tsconfig.json:4` `module: NodeNext`). Ex: `from "./db.js"` em `server/src/index.ts:18` — sem `.js` quebra no `tsx`.
-- **Server roda `.ts` via `tsx`** (`server/package.json:6`); `build: tsc` só checagem.
+- **Server roda `.ts` via `tsx`** (`server/package.json:6`); `build: tsc` só checagem (`outDir: ./dist` nunca usado em runtime).
 - Código/comentários em português.
 - **Spintax `{a|b}` depois de `{{var}}`** (`messageParser.ts:113` `processarMensagem`); `{{ola}}` saudação por horário, `{{bom_dia|boa_tarde|boa_noite}}` fixas; `{{numero|nome|empresa|cidade}}` + extras da planilha via `extras` JSON, fallback `variavelFallback`.
 - Delays: `delayEntreMsgMin/Max` aleatório entre envios + `delayImagemTexto` entre imagem e texto (`queue.ts:40`); `queue.ts:105` delay inicial 10–20s.
