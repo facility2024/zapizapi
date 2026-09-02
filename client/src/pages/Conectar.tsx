@@ -12,6 +12,7 @@ export default function Conectar() {
   const [qr, setQr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
+  const [gerando, setGerando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -44,20 +45,23 @@ export default function Conectar() {
   }
 
   async function buscarQrCode() {
-    setPolling(true);
+    setGerando(true);
+    setPolling(false);
     setQr(null);
     setError(null);
     try {
-      const { data } = await api.get<QrResponse & { connected?: boolean; message?: string }>("/wapi/qrcode");
+      const { data } = await api.get<QrResponse & { connected?: boolean; message?: string }>("/wapi/qrcode", { timeout: 45000 });
       if ((data as any).connected) {
         setStatus("connected");
         setError(null);
-        setPolling(false);
+        setGerando(false);
         return;
       }
       const code = (data as any).base64 || (data as any).qrCode || (data as any).qrcode;
       if (!code) throw new Error("QR Code vazio retornado pela W-API");
       setQr(code);
+      setGerando(false);
+      setPolling(true);
 
       // Polling até conectar
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -84,8 +88,15 @@ export default function Conectar() {
         setPolling(false);
       }, 120000);
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } }; message?: string };
-      setError(e.response?.data?.error || e.message || "Erro ao gerar QR Code");
+      const e = err as { response?: { data?: { error?: string } }; message?: string; code?: string };
+      const msg = e.response?.data?.error || e.message || "Erro ao gerar QR Code";
+      // timeout da W-API (22s) -> mensagem clara
+      if (msg.includes("timeout") || e.code === "ECONNABORTED") {
+        setError("W-API demorou demais (>35s). Clique em Conectar novamente.");
+      } else {
+        setError(msg);
+      }
+      setGerando(false);
       setPolling(false);
     }
   }
@@ -122,7 +133,13 @@ export default function Conectar() {
 
       {/* QR Code */}
       <div className="bg-bg-card border border-gray-800 rounded-xl p-8 flex flex-col items-center gap-6">
-        {qr ? (
+        {gerando ? (
+          <div className="w-72 h-72 rounded-xl border border-gray-700 flex flex-col items-center justify-center gap-3 text-gray-400">
+            <Loader2 className="w-8 h-8 animate-spin text-accent" />
+            <p className="text-sm">Gerando QR Code...</p>
+            <p className="text-xs opacity-60">W-API leva ~15-25s</p>
+          </div>
+        ) : qr ? (
           <>
             <img
               src={qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`}
@@ -140,10 +157,15 @@ export default function Conectar() {
 
         <button
           onClick={buscarQrCode}
-          disabled={polling || status === "connected"}
+          disabled={gerando || polling || status === "connected"}
           className="px-6 py-3 bg-accent hover:bg-accent-light disabled:opacity-50 rounded-xl font-medium transition-all shadow-glow-sm hover:shadow-glow"
         >
-          {polling ? (
+          {gerando ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Gerando QR Code...
+            </span>
+          ) : polling ? (
             <span className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               Aguardando pareamento...
