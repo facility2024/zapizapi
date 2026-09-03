@@ -47,103 +47,115 @@ router.get("/:id", async (req, res) => {
 
 // POST /api/campaigns — cria campanha
 router.post("/", async (req, res) => {
-  const {
-    nome,
-    tipoDisparo,
-    textoMensagem,
-    imagemUrl,
-    imagensUrls,
-    audioUrl,
-    variavelFallback,
-    contatoIds,
-    agendarPara,
-    delayEntreMsgMin,
-    delayEntreMsgMax,
-    delayImagemTexto,
-    limitePorHora,
-    limitePorDia,
-  } = req.body;
-
-  if (!nome || !tipoDisparo || !textoMensagem) {
-    res.status(400).json({ error: "nome, tipoDisparo e textoMensagem são obrigatórios" });
-    return;
-  }
-
-  // Valida spintax
-  const validacao = validarSpintax(textoMensagem);
-  if (!validacao.valido) {
-    res.status(400).json({ error: `Spintax inválido: ${validacao.erro}` });
-    return;
-  }
-
-  // Validação de agendamento: converte BRT -> UTC e valida passado
-  let agendarParaUTC: Date | null = null;
-  if (agendarPara) {
-    try {
-      const v = validarAgendamento(agendarPara, req.body.recorrencia || "nenhuma");
-      agendarParaUTC = v.utc;
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      res.status(400).json({ error: msg });
-      return;
-    }
-  }
-
-  const campanha = await prisma.campanha.create({
-    data: {
+  try {
+    const {
       nome,
       tipoDisparo,
       textoMensagem,
-      imagemUrl: imagemUrl || (imagensUrls ? (JSON.parse(imagensUrls)[0] ?? null) : null),
-      imagensUrls: imagensUrls || null,
-      audioUrl: audioUrl || null,
-      variavelFallback: variavelFallback || null,
-      agendarPara: agendarParaUTC,
-      recorrencia: req.body.recorrencia || "nenhuma",
-      status: agendarPara ? "agendada" : "rascunho",
-      delayEntreMsgMin: delayEntreMsgMin || 20,
-      delayEntreMsgMax: delayEntreMsgMax || 40,
-      delayImagemTexto: delayImagemTexto || 4,
-      limitePorHora: limitePorHora || null,
-      limitePorDia: limitePorDia || null,
-      totalContatos: contatoIds?.length || 0,
-    },
-  });
-  if (agendarParaUTC) {
-    await registrarLog({ campanhaId: campanha.id, acao: "agendado", detalhes: `Agendada para ${formatarBRT(agendarParaUTC)}` });
-  }
+      imagemUrl,
+      imagensUrls,
+      audioUrl,
+      variavelFallback,
+      contatoIds,
+      agendarPara,
+      delayEntreMsgMin,
+      delayEntreMsgMax,
+      delayImagemTexto,
+      limitePorHora,
+      limitePorDia,
+    } = req.body;
 
-  // Vincula contatos
-  if (contatoIds && contatoIds.length > 0) {
-    await prisma.campanhaContato.createMany({
-      data: contatoIds.map((contatoId: string) => ({
-        campanhaId: campanha.id,
-        contatoId,
-        status: "pendente",
-      })),
-      skipDuplicates: true,
+    if (!nome || !tipoDisparo || !textoMensagem) {
+      res.status(400).json({ error: "nome, tipoDisparo e textoMensagem são obrigatórios" });
+      return;
+    }
+
+    // Valida spintax
+    const validacao = validarSpintax(textoMensagem);
+    if (!validacao.valido) {
+      res.status(400).json({ error: `Spintax inválido: ${validacao.erro}` });
+      return;
+    }
+
+    // Validação de agendamento: converte BRT -> UTC e valida passado
+    let agendarParaUTC: Date | null = null;
+    if (agendarPara) {
+      try {
+        const v = validarAgendamento(agendarPara, req.body.recorrencia || "nenhuma");
+        agendarParaUTC = v.utc;
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        res.status(400).json({ error: msg });
+        return;
+      }
+    }
+
+    const campanha = await prisma.campanha.create({
+      data: {
+        nome,
+        tipoDisparo,
+        textoMensagem,
+        imagemUrl: imagemUrl || (imagensUrls ? (JSON.parse(imagensUrls)[0] ?? null) : null),
+        imagensUrls: imagensUrls || null,
+        audioUrl: audioUrl || null,
+        variavelFallback: variavelFallback || null,
+        agendarPara: agendarParaUTC,
+        recorrencia: req.body.recorrencia || "nenhuma",
+        status: agendarPara ? "agendada" : "rascunho",
+        delayEntreMsgMin: delayEntreMsgMin || 20,
+        delayEntreMsgMax: delayEntreMsgMax || 40,
+        delayImagemTexto: delayImagemTexto || 4,
+        limitePorHora: limitePorHora || null,
+        limitePorDia: limitePorDia || null,
+        totalContatos: contatoIds?.length || 0,
+      },
     });
-  }
+    if (agendarParaUTC) {
+      await registrarLog({ campanhaId: campanha.id, acao: "agendado", detalhes: `Agendada para ${formatarBRT(agendarParaUTC)}` });
+    }
 
-  res.json(campanha);
+    // Vincula contatos
+    if (contatoIds && contatoIds.length > 0) {
+      await prisma.campanhaContato.createMany({
+        data: contatoIds.map((contatoId: string) => ({
+          campanhaId: campanha.id,
+          contatoId,
+          status: "pendente",
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    res.json(campanha);
+  } catch (err: unknown) {
+    console.error("[CAMPANHA] Erro ao criar:", err);
+    const msg = err instanceof Error ? err.message : "Erro desconhecido ao criar campanha";
+    res.status(500).json({ error: msg });
+  }
 });
 
 // POST /api/campaigns/:id/start — inicia disparo
 router.post("/:id/start", async (req, res) => {
-  const campanha = await prisma.campanha.findUnique({ where: { id: req.params.id } });
-  if (!campanha) {
-    res.status(404).json({ error: "Campanha não encontrada" });
-    return;
-  }
-  if (campanha.status !== "rascunho" && campanha.status !== "pausada") {
-    res.status(400).json({ error: `Não é possível iniciar campanha com status "${campanha.status}"` });
-    return;
-  }
+  try {
+    const campanha = await prisma.campanha.findUnique({ where: { id: req.params.id } });
+    if (!campanha) {
+      res.status(404).json({ error: "Campanha não encontrada" });
+      return;
+    }
+    if (campanha.status !== "rascunho" && campanha.status !== "pausada") {
+      res.status(400).json({ error: `Não é possível iniciar campanha com status "${campanha.status}"` });
+      return;
+    }
 
-  await queue.enfileirarCampanha(campanha.id);
-  queue.processarFila().catch((e) => console.error("[FILA] Erro:", e));
+    await queue.enfileirarCampanha(campanha.id);
+    queue.processarFila().catch((e) => console.error("[FILA] Erro:", e));
 
-  res.json({ message: "Campanha iniciada", status: "em_andamento" });
+    res.json({ message: "Campanha iniciada", status: "em_andamento" });
+  } catch (err: unknown) {
+    console.error("[CAMPANHA] Erro ao iniciar:", err);
+    const msg = err instanceof Error ? err.message : "Erro ao iniciar campanha";
+    res.status(500).json({ error: msg });
+  }
 });
 
 // POST /api/campaigns/:id/pause — pausa campanha
