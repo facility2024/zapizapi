@@ -121,6 +121,7 @@ router.post("/", async (req, res) => {
         contatoId,
         status: "pendente",
       })),
+      skipDuplicates: true,
     });
   }
 
