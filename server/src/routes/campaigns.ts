@@ -114,15 +114,15 @@ router.post("/", async (req, res) => {
       await registrarLog({ campanhaId: campanha.id, acao: "agendado", detalhes: `Agendada para ${formatarBRT(agendarParaUTC)}` });
     }
 
-    // Vincula contatos
+    // Vincula contatos (remove duplicatas)
     if (contatoIds && contatoIds.length > 0) {
+      const unicos = [...new Set(contatoIds)];
       await prisma.campanhaContato.createMany({
-        data: contatoIds.map((contatoId: string) => ({
+        data: unicos.map((contatoId: string) => ({
           campanhaId: campanha.id,
           contatoId,
           status: "pendente",
         })),
-        skipDuplicates: true,
       });
     }
 
